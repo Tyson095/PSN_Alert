@@ -641,7 +641,88 @@ class TestReportAndSecrets:
 
 
 # =========================================================================== #
-# 10. Money parsing
+# 11. Telegram chat pairing
+# =========================================================================== #
+class _FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+        self.content = json.dumps(payload).encode()
+
+    def json(self):
+        return self._payload
+
+
+class _FakeSession:
+    """Minimal stand-in for requests.Session used by claim_chat."""
+
+    def __init__(self, payload):
+        self._payload = payload
+        self.calls = []
+
+    def get(self, url, params=None, timeout=None):
+        self.calls.append({"url": url, "params": params, "timeout": timeout})
+        return _FakeResponse(self._payload)
+
+
+def _update(text, chat_id=111, chat_type="private"):
+    return {"message": {"text": text, "chat": {"id": chat_id, "type": chat_type}}}
+
+
+class TestClaimChat:
+    def test_no_updates_returns_empty(self):
+        session = _FakeSession({"ok": True, "result": []})
+        assert core.claim_chat("tok", session=session) == ""
+
+    def test_plain_start_is_claimed(self):
+        session = _FakeSession({"ok": True, "result": [_update("/start")]})
+        assert core.claim_chat("tok", session=session) == "111"
+
+    def test_start_with_bot_username_is_claimed(self):
+        # Telegram sends "/start@BotName" when picked from the command menu.
+        session = _FakeSession(
+            {"ok": True, "result": [_update("/start@PSN_Alert_bot")]}
+        )
+        assert core.claim_chat("tok", session=session) == "111"
+
+    def test_group_chat_is_ignored(self):
+        session = _FakeSession(
+            {"ok": True, "result": [_update("/start", chat_type="group")]}
+        )
+        assert core.claim_chat("tok", session=session) == ""
+
+    def test_non_start_message_is_ignored(self):
+        session = _FakeSession({"ok": True, "result": [_update("hello")]})
+        assert core.claim_chat("tok", session=session) == ""
+
+    def test_start_among_other_updates_still_claims(self):
+        session = _FakeSession({
+            "ok": True,
+            "result": [_update("hello"), _update("/start", chat_id=999)],
+        })
+        assert core.claim_chat("tok", session=session) == "999"
+
+    def test_conflict_returns_empty_without_raising(self):
+        session = _FakeSession({"ok": False, "description": "409: Conflict"})
+        assert core.claim_chat("tok", session=session) == ""
+
+    def test_rejected_payload_returns_empty(self):
+        session = _FakeSession({"ok": False, "description": "Unauthorized"})
+        assert core.claim_chat("tok", session=session) == ""
+
+    def test_empty_token_short_circuits(self):
+        session = _FakeSession({"ok": True, "result": [_update("/start")]})
+        assert core.claim_chat("", session=session) == ""
+        assert session.calls == []
+
+    def test_requests_allowed_updates_filtered_to_message(self):
+        session = _FakeSession({"ok": True, "result": []})
+        core.claim_chat("tok", session=session)
+        params = session.calls[0]["params"]
+        assert json.loads(params["allowed_updates"]) == ["message"]
+
+
+# =========================================================================== #
+# 12. Money parsing
 # =========================================================================== #
 class TestParseMoney:
     @pytest.mark.parametrize("text,expected", [

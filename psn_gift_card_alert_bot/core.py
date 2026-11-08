@@ -732,15 +732,31 @@ def claim_chat(token: str, session: requests.Session | None = None) -> str:
             log.warning("getUpdates rejected: %s", scrub(description, token))
         return ""
 
+    updates = payload.get("result") or []
+    if not updates:
+        log.info("getUpdates: no pending updates at all - nothing has been "
+                 "sent to the bot yet")
+        return ""
+
     chat_id = ""
-    for update in payload.get("result", []):
+    for update in updates:
         message = update.get("message") or {}
         chat = message.get("chat") or {}
-        if chat.get("type") != "private":
-            continue
-        text = str(message.get("text") or "").strip().split()
-        if text and text[0].lower() == "/start":
+        ctype = str(chat.get("type") or "unknown")
+        raw = str(message.get("text") or "").strip()
+        command = raw.split()[0].lower() if raw else ""
+        # Telegram sends "/start" for a typed command but "/start@BotName"
+        # when the command is picked from the bot's command menu.
+        if ctype == "private" and command.split("@")[0] == "/start":
             chat_id = str(chat.get("id") or "")
+            log.info("Claimed private chat ...%s", chat_id[-4:])
+            continue
+        log.info("Ignoring update: chat_type=%s command=%r", ctype,
+                 command[:30] or "<no text>")
+
+    if not chat_id:
+        log.info("Saw %d update(s) but none was a /start in a private chat.",
+                 len(updates))
     return chat_id
 
 
