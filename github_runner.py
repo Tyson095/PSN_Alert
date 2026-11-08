@@ -148,6 +148,19 @@ def main(argv: list[str] | None = None) -> int:
         if claimed:
             state["chat_id"] = claimed
             log.info("Linked Telegram chat id ending ...%s", claimed[-4:])
+            # Send a confirmation so pairing is provable from Telegram itself
+            # rather than only from the Actions log.
+            hello = (
+                "✅ *PSN gift card monitor linked*\n\n"
+                f"Monitoring {len(active)} product(s). You will be alerted when "
+                "a card comes back in stock, drops in price, or shows a "
+                "cashback offer.\n\n"
+                "A daily availability report arrives at 09:00 IST."
+            )
+            if core.send_message(token, claimed, hello):
+                log.info("Pairing confirmation delivered")
+            else:
+                log.warning("Pairing confirmation failed to send")
         else:
             log.info("No pending /start. Send /start to the bot, then re-run.")
 
@@ -215,6 +228,11 @@ def main(argv: list[str] | None = None) -> int:
                 log.info("Daily report sent")
             else:
                 log.warning("Daily report send failed; will retry next run")
+    elif now.hour < report_hour:
+        # Distinguish "not due yet" from "already sent": report_due() returns
+        # False for both, and claiming it was already sent would be a lie.
+        log.info("Daily report not due yet; next window is %02d:00 %s",
+                 report_hour, tz_name)
     else:
         log.info("Daily report already sent for %s", now.strftime("%Y-%m-%d"))
 

@@ -18,6 +18,11 @@ name: PSN Gift Card Monitor
 
 on:
   workflow_dispatch:
+    inputs:
+      force_report:
+        description: 'Send the daily report now (use to test Telegram delivery)'
+        type: boolean
+        default: false
   schedule:
     - cron: '7,37 * * * *'   # every 30 minutes
     - cron: '30 3 * * *'     # 09:00 Asia/Kolkata daily report
@@ -66,7 +71,13 @@ jobs:
           TIMEZONE: Asia/Kolkata
           DAILY_REPORT_HOUR: '9'
           REQUEST_DELAY_SECONDS: '2'
-        run: python github_runner.py
+        # force_report is a manual dispatch input only; schedule never sets it.
+        run: |
+          if [ "${{ inputs.force_report }}" = "true" ]; then
+            python github_runner.py --report
+          else
+            python github_runner.py
+          fi
 
       - name: Persist monitoring state
         # Only state/state.json is committed. Logs (.venv, runner.log, etc.)
