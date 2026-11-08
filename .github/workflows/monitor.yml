@@ -39,7 +39,8 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        # v5 runs on Node 24 (v4 targets the deprecated Node 20).
+        uses: actions/checkout@v5
         with:
           # Full history so a defensive rebase before pushing state succeeds.
           fetch-depth: 0
@@ -47,7 +48,8 @@ jobs:
           persist-credentials: true
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        # v6 runs on Node 24 (v5 targets the deprecated Node 20).
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: 'pip'
