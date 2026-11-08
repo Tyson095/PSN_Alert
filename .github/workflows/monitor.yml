@@ -71,19 +71,44 @@ jobs:
       - name: Persist monitoring state
         # Only state/state.json is committed. Logs (.venv, runner.log, etc.)
         # are gitignored and never reach the repository.
+        # Robust by construction: never merge or rebase. A rebase with
+        # --autostash conflicts on state/state.json whenever origin/main moved
+        # during the run (another state push, or a human push), which left the
+        # tree with unmerged files and failed the job with exit code 128.
+        # Instead: stash the state this run computed, hard-reset to origin,
+        # restore it, commit, and push - retrying if the remote moved again.
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           if [ ! -f state/state.json ]; then
             echo "No state file produced this run - nothing to commit."
             exit 0
           fi
-          git add state/state.json
-          if git diff --cached --quiet; then
-            echo "State unchanged - nothing to commit."
-          else
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || \
-              echo "::warning::Could not rebase before push; retrying push as-is."
+
+          # The state this run just computed is authoritative; keep it safe.
+          cp state/state.json "${RUNNER_TEMP}/state.json"
+
+          for attempt in 1 2 3; do
+            git fetch origin "${GITHUB_REF_NAME}"
+            git reset --hard "origin/${GITHUB_REF_NAME}"
+            mkdir -p state
+            cp "${RUNNER_TEMP}/state.json" state/state.json
+
+            git add state/state.json
+            if git diff --cached --quiet; then
+              echo "State unchanged - nothing to commit."
+              exit 0
+            fi
+
             git commit -m "chore(state): update monitoring state [skip ci]"
-            git push || echo "::warning::State push failed; the next run will recompute it."
-          fi
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              echo "State pushed."
+              exit 0
+            fi
+
+            echo "::warning::State push rejected (attempt ${attempt}); origin moved - retrying."
+          done
+
+          echo "::warning::State push failed after 3 attempts; the next run will recompute it."
+          exit 0
