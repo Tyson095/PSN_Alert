@@ -1,305 +1,216 @@
+"""Optional long-running local process.
+
+GitHub Actions runs ``github_runner.py`` once and exits, so this file is **not**
+needed for monitoring. It exists for local use, and specifically so you can
+pair the bot with ``/start`` while sitting at your machine.
+
+It shares ``core`` with the GitHub Actions runner, so both paths use exactly
+the same detection logic and the same ``state/state.json``. Do not run this and
+the scheduled workflow at the same time -- two Telegram pollers will conflict
+(Telegram returns HTTP 409) and the two processes would race on the state file.
+"""
+
 from __future__ import annotations
 
 import logging
 import os
-import re
 import threading
 import time
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
-import yaml
 from apscheduler.schedulers.background import BackgroundScheduler
-from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
+try:  # Works both as `python bot.py` and as `python -m psn_gift_card_alert_bot.bot`.
+    from . import core
+except ImportError:  # pragma: no cover - script execution
+    import core  # type: ignore[no-redef]
+
 load_dotenv()
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
     handlers=[logging.StreamHandler(), logging.FileHandler("bot.log", encoding="utf-8")],
 )
 log = logging.getLogger("psn-alert")
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
-TZ = ZoneInfo(os.getenv("TIMEZONE", "Asia/Kolkata"))
-INTERVAL = max(60, int(os.getenv("CHECK_INTERVAL_SECONDS", "60")))
-REPORT_HOUR = int(os.getenv("DAILY_REPORT_HOUR", "9"))
+TOKEN = core.telegram_token()
+TZ = core.get_timezone()
+INTERVAL = max(60, int(os.getenv("CHECK_INTERVAL_SECONDS", "1800")))
+REPORT_HOUR = int(os.getenv("DAILY_REPORT_HOUR", str(core.DEFAULT_REPORT_HOUR)))
 REPORT_MINUTE = int(os.getenv("DAILY_REPORT_MINUTE", "0"))
-DB_PATH = Path(os.getenv("DATABASE_PATH", "data/alerts.sqlite3"))
-CONFIG_PATH = Path("config/products.yaml")
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; PersonalStockAlert/1.0; +personal-use)",
-    "Accept-Language": "en-IN,en;q=0.9",
-}
 
-import sqlite3
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+# Set only if you want a fixed destination instead of pairing via /start.
+CHAT_ID_OVERRIDE = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 
-def db():
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    return con
+_state_lock = threading.Lock()
 
-def init_db():
-    with db() as con:
-        con.execute("""CREATE TABLE IF NOT EXISTS snapshots (
-            product_id TEXT PRIMARY KEY, status TEXT, price REAL, discount TEXT,
-            cashback TEXT, checked_at TEXT, last_error TEXT
-        )""")
-        con.execute("""CREATE TABLE IF NOT EXISTS events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, product_id TEXT, event_type TEXT,
-            message TEXT, created_at TEXT
-        )""")
-        con.execute("""CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY, value TEXT
-        )""")
 
-def get_chat_id():
-    global CHAT_ID
-    if CHAT_ID:
-        return CHAT_ID
-    with db() as con:
-        row = con.execute("SELECT value FROM settings WHERE key='chat_id'").fetchone()
-    return row["value"] if row else ""
+def get_chat_id(state: dict) -> str:
+    return CHAT_ID_OVERRIDE or str(state.get("chat_id") or "")
 
-def save_chat_id(chat_id):
-    global CHAT_ID
-    CHAT_ID = str(chat_id)
-    with db() as con:
-        con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('chat_id',?)", (CHAT_ID,))
 
-def tg(method, payload=None):
-    if not TOKEN:
-        log.warning("Telegram token missing; notification skipped.")
-        return None
-    try:
-        r = requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/{method}",
-            json=payload or {}, timeout=20
-        )
-        r.raise_for_status()
-        data = r.json()
-        if not data.get("ok"):
-            log.error("Telegram API error: %s", data)
-        return data
-    except requests.RequestException as exc:
-        log.exception("Telegram request failed: %s", exc)
-        return None
-
-def send(text):
-    chat_id = get_chat_id()
+def send(state: dict, text: str) -> bool:
+    chat_id = get_chat_id(state)
     if not chat_id:
-        log.info("No Telegram chat linked yet. Send /start to your bot.")
-        return
-    # Telegram message limit is 4096 characters.
-    tg("sendMessage", {"chat_id": chat_id, "text": text[:4000], "disable_web_page_preview": True})
+        log.info("No Telegram chat linked yet. Open the bot and send /start.")
+        return False
+    return core.send_message(TOKEN, chat_id, text)
 
-def telegram_poll():
-    """Accept /start and basic commands; first private chat claims an unconfigured bot."""
+
+# --------------------------------------------------------------------------- #
+# Telegram polling: pairing and simple commands
+# --------------------------------------------------------------------------- #
+def telegram_poll() -> None:
+    """Accept /start and basic commands; the first private chat pairs the bot."""
     offset = None
     while True:
         try:
-            params = {"timeout": 25}
+            params: dict = {"timeout": 25}
             if offset is not None:
                 params["offset"] = offset
-            r = requests.get(f"https://api.telegram.org/bot{TOKEN}/getUpdates",
-                             params=params, timeout=35)
-            r.raise_for_status()
-            for update in r.json().get("result", []):
+            response = requests.get(
+                f"{core.TELEGRAM_API}/bot{TOKEN}/getUpdates",
+                params=params, timeout=35,
+            )
+            payload = response.json() if response.content else {}
+            if not payload.get("ok"):
+                # 409 means another poller (e.g. a stray github_runner --report)
+                # is holding the updates. Wait and retry rather than spin.
+                log.warning("getUpdates rejected: %s",
+                            core.scrub(str(payload.get("description") or ""), TOKEN))
+                time.sleep(10)
+                continue
+
+            for update in payload.get("result", []):
                 offset = update["update_id"] + 1
-                msg = update.get("message") or update.get("edited_message")
-                if not msg or not msg.get("text"):
+                message = update.get("message") or update.get("edited_message")
+                if not message or not message.get("text"):
                     continue
-                chat = msg["chat"]
+                chat = message.get("chat") or {}
                 if chat.get("type") != "private":
                     continue
-                text = msg["text"].strip().split()[0].lower()
-                chat_id = str(chat["id"])
-                existing = get_chat_id()
-                if not existing and text == "/start":
-                    save_chat_id(chat_id)
-                    send("✅ PSN Gift Card Alert Bot connected.\nUse /status, /report or /help.")
-                elif existing and chat_id != existing:
-                    tg("sendMessage", {"chat_id": chat_id, "text": "This bot is already linked to another private chat."})
-                elif text == "/start":
-                    send("Bot is active. Use /status, /report or /help.")
-                elif text == "/help":
-                    send("Commands:\n/status — latest monitored status\n/report — availability summary\n/help — this message")
-                elif text == "/status":
-                    send(build_report(title="Current product status"))
-                elif text == "/report":
-                    send(build_report(title="PSN gift card availability report"))
-        except Exception as exc:
-            log.exception("Telegram polling error: %s", exc)
+
+                chat_id = str(chat.get("id") or "")
+                command = message["text"].strip().split()[0].lower()
+
+                with _state_lock:
+                    state = core.load_state()
+                    existing = get_chat_id(state)
+
+                    if not existing and command == "/start":
+                        state["chat_id"] = chat_id
+                        core.save_state(state)
+                        send(state, "✅ PSN Gift Card Alert Bot connected.\n"
+                                    "Use /status, /report or /help.")
+                        continue
+                    if existing and chat_id != existing:
+                        core.send_message(
+                            TOKEN, chat_id,
+                            "This bot is already linked to another private chat.")
+                        continue
+                    if command == "/start":
+                        send(state, "Bot is active. Use /status, /report or /help.")
+                    elif command == "/help":
+                        send(state, "Commands:\n/status — latest monitored status\n"
+                                    "/report — availability summary\n/help — this message")
+                    elif command == "/status":
+                        send(state, core.build_report(
+                            core.load_products(), state, core.now_iso(TZ),
+                            "Current product status"))
+                    elif command == "/report":
+                        send(state, core.build_report(
+                            core.load_products(), state, core.now_iso(TZ),
+                            "PSN gift card availability report"))
+        except Exception as exc:  # noqa: BLE001 - polling must survive anything
+            log.warning("Telegram polling error: %s: %s", type(exc).__name__,
+                        core.scrub(str(exc), TOKEN))
             time.sleep(5)
 
-def load_products():
-    if not CONFIG_PATH.exists():
-        return []
-    with CONFIG_PATH.open(encoding="utf-8") as f:
-        return yaml.safe_load(f).get("products", [])
 
-def parse_money(text):
-    if not text:
-        return None
-    cleaned = text.replace(",", "")
-    match = re.search(r"(?:₹|Rs\.?|INR)\s*([0-9]+(?:\.[0-9]{1,2})?)|([0-9]+(?:\.[0-9]{1,2})?)\s*(?:₹|INR)", cleaned, re.I)
-    if not match:
-        return None
-    return float(match.group(1) or match.group(2))
-
-def selected_text(soup, selector):
-    if not selector:
-        return ""
-    el = soup.select_one(selector)
-    return el.get_text(" ", strip=True) if el else ""
-
-def fetch_product(p):
-    response = requests.get(p["url"], headers=HEADERS, timeout=25)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    page_text = soup.get_text(" ", strip=True).lower()
-    availability_text = selected_text(soup, p.get("availability_selector", "")).lower()
-    if not availability_text:
-        availability_text = page_text
-
-    out_patterns = [x.lower() for x in p.get("out_of_stock_patterns", [])]
-    in_patterns = [x.lower() for x in p.get("in_stock_patterns", [])]
-
-    # Out-of-stock wins if both phrases occur somewhere on a page. For variant pages,
-    # configure a selector that scopes text to the selected denomination.
-    if any(x in availability_text for x in out_patterns):
-        status = "OUT_OF_STOCK"
-    elif any(x in availability_text for x in in_patterns):
-        status = "IN_STOCK"
-    else:
-        status = "UNKNOWN"
-
-    price_text = selected_text(soup, p.get("price_selector", ""))
-    if not price_text:
-        price_text = ""
-    discount = selected_text(soup, p.get("discount_selector", "")) or ""
-    cashback = selected_text(soup, p.get("cashback_selector", "")) or ""
-    return {
-        "status": status,
-        "price": parse_money(price_text),
-        "discount": discount[:250],
-        "cashback": cashback[:250],
-        "error": "",
-    }
-
-def record_event(product_id, event_type, message):
-    with db() as con:
-        con.execute(
-            "INSERT INTO events(product_id,event_type,message,created_at) VALUES(?,?,?,?)",
-            (product_id, event_type, message, datetime.now(TZ).isoformat())
-        )
-
-def monitor_one(p):
-    if not p.get("enabled", False):
+# --------------------------------------------------------------------------- #
+# Monitoring cycle (identical logic to github_runner.py)
+# --------------------------------------------------------------------------- #
+def monitor_all() -> None:
+    products = core.enabled_products(core.load_products())
+    if not products:
+        log.warning("No enabled products in config/products.yaml")
         return
-    pid = p["id"]
-    try:
-        result = fetch_product(p)
-        now = datetime.now(TZ).isoformat()
-        with db() as con:
-            old = con.execute("SELECT * FROM snapshots WHERE product_id=?", (pid,)).fetchone()
-            old_status = old["status"] if old else None
-            old_price = old["price"] if old else None
-            old_discount = old["discount"] if old else None
-            old_cashback = old["cashback"] if old else None
-            con.execute("""INSERT OR REPLACE INTO snapshots
-                (product_id,status,price,discount,cashback,checked_at,last_error)
-                VALUES(?,?,?,?,?,?,?)""",
-                (pid, result["status"], result["price"], result["discount"],
-                 result["cashback"], now, ""))
-        name = f'{p["retailer"]} PSN ₹{p["denomination"]}'
-        link = p["url"]
 
-        # First successful observation establishes baseline; it does not create a false restock alert.
-        if old_status and old_status != "IN_STOCK" and result["status"] == "IN_STOCK":
-            msg = f"🟢 BACK IN STOCK\n{name}\nLink: {link}"
-            if result["price"] is not None:
-                msg += f'\nPrice: ₹{result["price"]:,.2f}'
-            send(msg); record_event(pid, "RESTOCK", msg)
+    with _state_lock:
+        state = core.load_state()
 
-        if old_price is not None and result["price"] is not None and result["price"] < old_price:
-            msg = f"🔻 PRICE DROP\n{name}\n₹{old_price:,.2f} → ₹{result['price']:,.2f}\nLink: {link}"
-            send(msg); record_event(pid, "PRICE_DROP", msg)
+    now = core.now_iso(TZ)
+    entries = state.setdefault("products", {})
+    alerts: list[core.Alert] = []
 
-        if result["discount"] and result["discount"] != (old_discount or ""):
-            msg = f"🏷️ DISCOUNT / OFFER UPDATE\n{name}\n{result['discount']}\nLink: {link}"
-            send(msg); record_event(pid, "DISCOUNT", msg)
+    for product in products:
+        pid = str(product.get("id") or "")
+        observation = core.observe(product)
+        evaluation = core.evaluate(product, entries.get(pid), observation, now)
+        entries[pid] = evaluation.entry
 
-        if result["cashback"] and result["cashback"] != (old_cashback or ""):
-            msg = f"💰 CASHBACK UPDATE\n{name}\n{result['cashback']}\nLink: {link}"
-            send(msg); record_event(pid, "CASHBACK", msg)
+        if observation.get("ok"):
+            price = evaluation.entry.get("price")
+            price_text = f" ₹{price:,.0f}" if isinstance(price, (int, float)) else ""
+            log.info("%s: %s%s", pid, evaluation.entry.get("status"), price_text)
+        else:
+            log.warning("%s: failed (%s)", pid, observation.get("error"))
 
-        log.info("%s: %s", pid, result["status"])
-    except Exception as exc:
-        log.warning("Monitor failed for %s: %s", pid, exc)
-        with db() as con:
-            old = con.execute("SELECT * FROM snapshots WHERE product_id=?", (pid,)).fetchone()
-            if old:
-                con.execute("UPDATE snapshots SET last_error=?,checked_at=? WHERE product_id=?",
-                            (str(exc)[:500], datetime.now(TZ).isoformat(), pid))
-            else:
-                con.execute("""INSERT INTO snapshots(product_id,status,checked_at,last_error)
-                    VALUES(?,?,?,?)""", (pid, "UNKNOWN", datetime.now(TZ).isoformat(), str(exc)[:500]))
+        for alert in evaluation.alerts:
+            log.info("ALERT %s for %s", alert.type, pid)
+            alerts.append(alert)
+            core.record_event(state, pid, alert.type, alert.message, now)
+            send(state, alert.message)
 
-def monitor_all():
-    products = [p for p in load_products() if p.get("enabled", False)]
-    log.info("Checking %d enabled products", len(products))
-    for p in products:
-        monitor_one(p)
-        # Small spacing prevents a burst of simultaneous requests.
-        time.sleep(2)
+        time.sleep(float(os.getenv("REQUEST_DELAY_SECONDS", "2")))
 
-def build_report(title="PSN availability report"):
-    products = load_products()
-    lines = [f"🎮 {title}", datetime.now(TZ).strftime("%d %b %Y, %I:%M %p IST"), ""]
-    enabled = [p for p in products if p.get("enabled", False)]
-    if not enabled:
-        lines.append("No products enabled yet. Add product URLs/selectors and set enabled: true.")
-        return "\n".join(lines)
-    with db() as con:
-        rows = {r["product_id"]: r for r in con.execute("SELECT * FROM snapshots")}
-    for p in enabled:
-        row = rows.get(p["id"])
-        status = row["status"] if row else "NOT CHECKED"
-        price = f' · ₹{row["price"]:,.2f}' if row and row["price"] is not None else ""
-        lines.append(f'{p["retailer"]} · ₹{p["denomination"]}: {status}{price}')
-        if row and row["last_error"]:
-            lines.append(f'  Last error: {row["last_error"][:120]}')
-        lines.append(p["url"])
-    return "\n".join(lines)
+    with _state_lock:
+        core.save_state(state)
+    log.info("Cycle complete: %d alert(s)", len(alerts))
 
-def daily_report():
-    send(build_report("Daily PSN gift card availability report"))
 
-def main():
-    if not TOKEN or TOKEN == "123456789:replace_me":
-        raise SystemExit("Set TELEGRAM_BOT_TOKEN in .env before starting.")
-    init_db()
+def daily_report() -> None:
+    with _state_lock:
+        state = core.load_state()
+    text = core.build_report(core.load_products(), state, core.now_iso(TZ),
+                             "Daily PSN gift card availability report")
+    send(state, text)
+    state["last_daily_report_date"] = datetime.now(TZ).strftime("%Y-%m-%d")
+    with _state_lock:
+        core.save_state(state)
+
+
+def main() -> None:
+    if not TOKEN:
+        raise SystemExit("Set TELEGRAM_BOT_TOKEN in .env before starting. "
+                         "For GitHub Actions, store it as an Actions secret instead.")
+
+    log.info("Local bot starting. Interval=%ss, timezone=%s", INTERVAL, TZ)
+    log.info("State file: %s", core.state_path())
+    log.info("Open your bot in Telegram and send /start.")
+
     threading.Thread(target=telegram_poll, daemon=True).start()
+
     scheduler = BackgroundScheduler(timezone=TZ)
     scheduler.add_job(monitor_all, "interval", seconds=INTERVAL, id="monitor",
-                      max_instances=1, coalesce=True, next_run_time=datetime.now(TZ))
+                      max_instances=1, coalesce=True,
+                      next_run_time=datetime.now(TZ))
     scheduler.add_job(daily_report, "cron", hour=REPORT_HOUR, minute=REPORT_MINUTE,
                       id="daily_report", max_instances=1)
     scheduler.start()
-    log.info("Bot running. Check interval=%ss, timezone=%s", INTERVAL, TZ)
-    log.info("Open your bot in Telegram and send /start.")
+
     try:
         while True:
             time.sleep(60)
     except KeyboardInterrupt:
         scheduler.shutdown()
         log.info("Stopped.")
+
 
 if __name__ == "__main__":
     main()

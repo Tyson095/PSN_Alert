@@ -1,79 +1,100 @@
-# Add one entry per product/denomination/retailer.
-# Selectors are optional. If the page has no clear stock indicator, status stays UNKNOWN
-# rather than incorrectly reporting the item as available.
+# PlayStation gift card monitoring configuration.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW TO READ THIS FILE
+# ─────────────────────────────────────────────────────────────────────────────
+# enabled: true   -> the product is fetched every cycle. Only set this after
+#                    you have confirmed the entry works (run the probe below).
+# enabled: false  -> configured but NOT monitored. Unverified or blocked.
+#
+# extractor:
+#   rooter_rsc  -> reads the Next.js payload Rooter ships inside its HTML.
+#                  Gives a real per-denomination outOfStock flag + price.
+#   html_text   -> classic CSS selectors + text patterns, for pages whose data
+#                  is present in the server-rendered HTML.
+#
+# Verify an entry before enabling it:
+#   python github_runner.py --dry-run
+# and check the status lines. UNKNOWN means "we could not tell" -- it is never
+# reported as out of stock.
+#
+# IMPORTANT: a page that we cannot read must stay disabled or report UNKNOWN.
+# Never enable an entry whose status is always UNKNOWN; that is a broken
+# selector or an inaccessible page, not a real-world stock signal.
+# ─────────────────────────────────────────────────────────────────────────────
+
 products:
+  # ── Rooter ────────────────────────────────────────────────────────────────
+  # VERIFIED 2026-11-08. The URL is listed in https://shop.rooter.gg/sitemap.xml
+  # and returns HTTP 200. robots.txt: "User-agent: * / Allow: /".
+  # All five denominations live on one page, so they share a URL and are told
+  # apart by variant_pattern, which matches the variation name the site itself
+  # publishes (e.g. "Rs.1000 Wallet Code").
   - id: rooter-psn-1000
     retailer: Rooter
     denomination: 1000
     url: https://shop.rooter.gg/product/playstation-gift-cards
-    # Rooter uses selectable variants; page-wide text alone may not identify the
-    # selected denomination's stock. Verify and add selectors after inspecting the page.
-    availability_selector: ""
-    price_selector: ""
-    discount_selector: ""
-    cashback_selector: ""
-    in_stock_patterns:
-      - "in stock"
-      - "available"
-      - "buy now"
-    out_of_stock_patterns:
-      - "out of stock"
-      - "sold out"
-    enabled: false
+    extractor: rooter_rsc
+    variant_pattern: 'Rs\.1000\b'
+    enabled: true
+    verification: verified-2026-11-08
+
   - id: rooter-psn-2000
     retailer: Rooter
     denomination: 2000
     url: https://shop.rooter.gg/product/playstation-gift-cards
-    availability_selector: ""
-    price_selector: ""
-    discount_selector: ""
-    cashback_selector: ""
-    in_stock_patterns: ["in stock", "available", "buy now"]
-    out_of_stock_patterns: ["out of stock", "sold out"]
-    enabled: false
+    extractor: rooter_rsc
+    variant_pattern: 'Rs\.2000\b'
+    enabled: true
+    verification: verified-2026-11-08
+
   - id: rooter-psn-3000
     retailer: Rooter
     denomination: 3000
     url: https://shop.rooter.gg/product/playstation-gift-cards
-    availability_selector: ""
-    price_selector: ""
-    discount_selector: ""
-    cashback_selector: ""
-    in_stock_patterns: ["in stock", "available", "buy now"]
-    out_of_stock_patterns: ["out of stock", "sold out"]
-    enabled: false
+    extractor: rooter_rsc
+    variant_pattern: 'Rs\.3000\b'
+    enabled: true
+    verification: verified-2026-11-08
+
   - id: rooter-psn-4000
     retailer: Rooter
     denomination: 4000
     url: https://shop.rooter.gg/product/playstation-gift-cards
-    availability_selector: ""
-    price_selector: ""
-    discount_selector: ""
-    cashback_selector: ""
-    in_stock_patterns: ["in stock", "available", "buy now"]
-    out_of_stock_patterns: ["out of stock", "sold out"]
-    enabled: false
+    extractor: rooter_rsc
+    variant_pattern: 'Rs\.4000\b'
+    enabled: true
+    verification: verified-2026-11-08
+
   - id: rooter-psn-5000
     retailer: Rooter
     denomination: 5000
     url: https://shop.rooter.gg/product/playstation-gift-cards
-    availability_selector: ""
-    price_selector: ""
-    discount_selector: ""
-    cashback_selector: ""
-    in_stock_patterns: ["in stock", "available", "buy now"]
-    out_of_stock_patterns: ["out of stock", "sold out"]
-    enabled: false
+    extractor: rooter_rsc
+    variant_pattern: 'Rs\.5000\b'
+    enabled: true
+    verification: verified-2026-11-08
 
-# Add Amazon India, Paytm, Games The Shop and other retailer entries here.
-# For every entry, use the exact product/variant URL and selectors/patterns verified
-# against that retailer's page. Do not guess selectors or treat a product listing
-# page as proof that a specific denomination is in stock.
-
+  # ── Games The Shop ────────────────────────────────────────────────────────
+  # DISABLED - data is not in the HTML.
+  # The site is a Next.js app whose product page returns only a shell; the
+  # real product data is fetched in the browser from /api/..., and
+  # https://www.gamestheshop.com/robots.txt explicitly contains:
+  #     Disallow: /api/
+  # Fetching it anyway would violate that policy, so we do not.
+  # The search URL below is real and reachable, but it also renders client-side
+  # ("Loading results..."), so a plain HTTP request sees no products.
+  #
+  # To enable later you need BOTH:
+  #   1. the exact product page UUID (from the site's own navigation or
+  #      https://www.gamestheshop.com/sitemap.xml), and
+  #   2. a server-rendered data source that is not under /api/.
+  # If neither exists, this retailer cannot be monitored here.
   - id: gamestheshop-psn-1000
     retailer: Games The Shop
     denomination: 1000
-    url: https://www.gamestheshop.com/search?condition=Digital&platforms=PlayStation%2CPS5%2CPS4%2CPSN
+    url: ""
+    extractor: html_text
     availability_selector: ""
     price_selector: ""
     discount_selector: ""
@@ -81,10 +102,16 @@ products:
     in_stock_patterns: ["in stock", "add to cart", "buy now"]
     out_of_stock_patterns: ["out of stock", "sold out"]
     enabled: false
+    notes: >-
+      Needs an exact product UUID plus a server-rendered source. /api/ is
+      disallowed by robots.txt. Discovery page:
+      https://www.gamestheshop.com/search?condition=Digital&platforms=PlayStation%2CPS5%2CPS4%2CPSN
+
   - id: gamestheshop-psn-2000
     retailer: Games The Shop
     denomination: 2000
-    url: https://www.gamestheshop.com/search?condition=Digital&platforms=PlayStation%2CPS5%2CPS4%2CPSN
+    url: ""
+    extractor: html_text
     availability_selector: ""
     price_selector: ""
     discount_selector: ""
@@ -92,10 +119,13 @@ products:
     in_stock_patterns: ["in stock", "add to cart", "buy now"]
     out_of_stock_patterns: ["out of stock", "sold out"]
     enabled: false
+    notes: "Same blocker as gamestheshop-psn-1000."
+
   - id: gamestheshop-psn-3000
     retailer: Games The Shop
     denomination: 3000
-    url: https://www.gamestheshop.com/search?condition=Digital&platforms=PlayStation%2CPS5%2CPS4%2CPSN
+    url: ""
+    extractor: html_text
     availability_selector: ""
     price_selector: ""
     discount_selector: ""
@@ -103,10 +133,13 @@ products:
     in_stock_patterns: ["in stock", "add to cart", "buy now"]
     out_of_stock_patterns: ["out of stock", "sold out"]
     enabled: false
+    notes: "Same blocker as gamestheshop-psn-1000."
+
   - id: gamestheshop-psn-4000
     retailer: Games The Shop
     denomination: 4000
-    url: https://www.gamestheshop.com/search?condition=Digital&platforms=PlayStation%2CPS5%2CPS4%2CPSN
+    url: ""
+    extractor: html_text
     availability_selector: ""
     price_selector: ""
     discount_selector: ""
@@ -114,10 +147,13 @@ products:
     in_stock_patterns: ["in stock", "add to cart", "buy now"]
     out_of_stock_patterns: ["out of stock", "sold out"]
     enabled: false
+    notes: "Same blocker as gamestheshop-psn-1000."
+
   - id: gamestheshop-psn-5000
     retailer: Games The Shop
     denomination: 5000
-    url: https://www.gamestheshop.com/search?condition=Digital&platforms=PlayStation%2CPS5%2CPS4%2CPSN
+    url: ""
+    extractor: html_text
     availability_selector: ""
     price_selector: ""
     discount_selector: ""
@@ -125,9 +161,195 @@ products:
     in_stock_patterns: ["in stock", "add to cart", "buy now"]
     out_of_stock_patterns: ["out of stock", "sold out"]
     enabled: false
+    notes: "Same blocker as gamestheshop-psn-1000."
 
-# Candidate discovery URLs (not yet configured as active monitors):
-# Amazon India search: https://www.amazon.in/s?k=playstation+gift+card
-# Paytm: PSN-specific public listing not confirmed; inspect the Gift Cards catalogue in-app.
-# Games The Shop exact ₹1,000 product page:
-# https://www.gamestheshop.com/product/2153a461-7203-4802-aac4-283be4c775d3?variant=09df672e-b598-4b2d-9b3e-e1ca1dd9d205
+  # ── Amazon India ──────────────────────────────────────────────────────────
+  # DISABLED - Amazon serves HTTP 503 to non-browser clients.
+  # Every request made during verification (search page and a product page)
+  # returned 503, i.e. Amazon is actively rejecting this client. Continuing
+  # would mean working around an anti-bot control, which this project will not
+  # do. No product URL is recorded here because none could be verified.
+  #
+  # Amazon's own product advertising API (PA-API 5) has been replaced by the
+  # Creators API, which requires Amazon Associates eligibility:
+  #   https://affiliate-program.amazon.in/creatorsapi/docs/en-us/introduction
+  # If you become eligible, add an authorised adapter and leave these disabled
+  # until it exists.
+  #
+  # Discovery URL (real, but currently returns 503 to us):
+  #   https://www.amazon.in/s?k=playstation+gift+card
+  - id: amazon-psn-1000
+    retailer: Amazon India
+    denomination: 1000
+    url: ""
+    extractor: html_text
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "currently unavailable"]
+    enabled: false
+    notes: "Blocked with HTTP 503. Needs the authorised Creators API."
+
+  - id: amazon-psn-2000
+    retailer: Amazon India
+    denomination: 2000
+    url: ""
+    extractor: html_text
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "currently unavailable"]
+    enabled: false
+    notes: "Blocked with HTTP 503. Needs the authorised Creators API."
+
+  - id: amazon-psn-3000
+    retailer: Amazon India
+    denomination: 3000
+    url: ""
+    extractor: html_text
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "currently unavailable"]
+    enabled: false
+    notes: "Blocked with HTTP 503. Needs the authorised Creators API."
+
+  - id: amazon-psn-4000
+    retailer: Amazon India
+    denomination: 4000
+    url: ""
+    extractor: html_text
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "currently unavailable"]
+    enabled: false
+    notes: "Blocked with HTTP 503. Needs the authorised Creators API."
+
+  - id: amazon-psn-5000
+    retailer: Amazon India
+    denomination: 5000
+    url: ""
+    extractor: html_text
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "currently unavailable"]
+    enabled: false
+    notes: "Blocked with HTTP 503. Needs the authorised Creators API."
+
+  # ── Paytm ─────────────────────────────────────────────────────────────────
+  # DISABLED - no verifiable public product page found.
+  # https://www.paytm.com/search?q=playstation%20gift%20card returns the
+  # generic marketing homepage with no results in the HTML; the results are
+  # rendered client-side. No public PSN gift card listing could be confirmed,
+  # and much of Paytm's catalogue requires sign-in. We do not automate sign-in.
+  #
+  # To enable: find a product URL that returns the price and stock text in the
+  # raw HTML (View Source, not the rendered page), then fill in the selectors.
+  - id: paytm-psn-1000
+    retailer: Paytm
+    denomination: 1000
+    url: ""
+    extractor: html_text
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "buy now", "add to cart"]
+    out_of_stock_patterns: ["out of stock", "sold out"]
+    enabled: false
+    notes: "No server-rendered public listing confirmed. Needs a verified URL."
+
+  - id: paytm-psn-2000
+    retailer: Paytm
+    denomination: 2000
+    url: ""
+    extractor: html_text
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "buy now", "add to cart"]
+    out_of_stock_patterns: ["out of stock", "sold out"]
+    enabled: false
+    notes: "No server-rendered public listing confirmed. Needs a verified URL."
+
+  - id: paytm-psn-3000
+    retailer: Paytm
+    denomination: 3000
+    url: ""
+    extractor: html_text
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "buy now", "add to cart"]
+    out_of_stock_patterns: ["out of stock", "sold out"]
+    enabled: false
+    notes: "No server-rendered public listing confirmed. Needs a verified URL."
+
+  - id: paytm-psn-4000
+    retailer: Paytm
+    denomination: 4000
+    url: ""
+    extractor: html_text
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "buy now", "add to cart"]
+    out_of_stock_patterns: ["out of stock", "sold out"]
+    enabled: false
+    notes: "No server-rendered public listing confirmed. Needs a verified URL."
+
+  - id: paytm-psn-5000
+    retailer: Paytm
+    denomination: 5000
+    url: ""
+    extractor: html_text
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "buy now", "add to cart"]
+    out_of_stock_patterns: ["out of stock", "sold out"]
+    enabled: false
+    notes: "No server-rendered public listing confirmed. Needs a verified URL."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OTHER INDIAN RETAILERS IDENTIFIED BUT NOT YET VERIFIED
+# ─────────────────────────────────────────────────────────────────────────────
+# These are legitimate Indian retailers that have carried PlayStation wallet
+# codes in the past. None was confirmed to serve stock/price data in plain
+# HTML during verification, so no entry has been created for them. Do not add
+# and enable one without checking the raw HTML first.
+#
+#   Flipkart    flipkart.com            - heavy client-side rendering; usually
+#                                         needs an account to see offers.
+#   Croma       croma.com               - verify whether PSN codes are listed.
+#   Vijay Sales vijaysales.com          - verify whether PSN codes are listed.
+#   Snapdeal    snapdeal.com            - checked 2026-11-08: searching
+#                                         "playstation gift card" returned
+#                                         unrelated items (playing cards,
+#                                         party supplies). No genuine PSN
+#                                         listings found.
+#
+# Adding a new retailer safely:
+#   1. Open the exact product page and use "View Page Source".
+#   2. Confirm the price and stock wording appear in that raw source.
+#   3. If it does, the page is client-rendered - it cannot be monitored here
+#      unless a non-/api/ server-rendered source exists.
+#   4. If it does, copy the CSS selector (F12 -> right click -> Copy selector)
+#      and test it. Only then set enabled: true.
+# ─────────────────────────────────────────────────────────────────────────────

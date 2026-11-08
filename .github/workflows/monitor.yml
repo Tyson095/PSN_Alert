@@ -1,0 +1,87 @@
+name: PSN Gift Card Monitor
+
+# One-shot monitoring cycle. The script starts, checks every enabled product
+# once, sends any notifications, writes state, and exits.
+#
+# Scheduling notes:
+#   * GitHub Actions cron runs in UTC. Asia/Kolkata is UTC+05:30 with no DST,
+#     so 09:00 IST is exactly 03:30 UTC.
+#   * Scheduled runs are NOT executed on time. GitHub queues high-demand
+#     minutes and routinely delays scheduled workflows by 5-30 minutes, and
+#     occasionally much longer. Never rely on a scheduled run happening at an
+#     exact minute. The runner therefore decides on *every* cycle whether the
+#     daily report is still due, so a delayed tick still yields exactly one
+#     report per day.
+#   * The every-30-minutes schedule uses :07 and :37 rather than :00 and :30.
+#     This is still a 30-minute interval, but it avoids the busiest marks where
+#     GitHub is most likely to delay or queue runs.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7,37 * * * *'   # every 30 minutes
+    - cron: '30 3 * * *'     # 09:00 Asia/Kolkata daily report
+
+# Minimum permissions: the only write access needed is pushing the state file.
+permissions:
+  contents: write
+
+# Never let two cycles run at the same time -- overlapping runs would race on
+# the state file. Queued (not cancelled) so a running cycle finishes cleanly.
+concurrency:
+  group: psn-gift-card-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          # Full history so a defensive rebase before pushing state succeeds.
+          fetch-depth: 0
+          # Default GITHUB_TOKEN; needs contents:write (set above) to push.
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run one-shot monitoring cycle
+        env:
+          # Read from Actions secrets. Never echoed, never written to state.
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TIMEZONE: Asia/Kolkata
+          DAILY_REPORT_HOUR: '9'
+          REQUEST_DELAY_SECONDS: '2'
+        run: python github_runner.py
+
+      - name: Persist monitoring state
+        # Only state/state.json is committed. Logs (.venv, runner.log, etc.)
+        # are gitignored and never reach the repository.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ ! -f state/state.json ]; then
+            echo "No state file produced this run - nothing to commit."
+            exit 0
+          fi
+          git add state/state.json
+          if git diff --cached --quiet; then
+            echo "State unchanged - nothing to commit."
+          else
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || \
+              echo "::warning::Could not rebase before push; retrying push as-is."
+            git commit -m "chore(state): update monitoring state [skip ci]"
+            git push || echo "::warning::State push failed; the next run will recompute it."
+          fi

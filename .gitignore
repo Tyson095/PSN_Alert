@@ -1,0 +1,40 @@
+# --- Secrets ----------------------------------------------------------------
+# Never commit credentials. The Telegram token lives ONLY in the GitHub Actions
+# secret TELEGRAM_BOT_TOKEN and, for local runs, in .env.
+.env
+.env.*
+!.env.example
+
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# --- Runtime artifacts ------------------------------------------------------
+# Monitoring state IS committed (state/state.json); temporary writes are not.
+state/*.tmp
+state/*.log
+
+# Local logs from either runner.
+*.log
+bot.log
+runner.log
+
+# Legacy local database (the GitHub Actions runner uses state/state.json).
+data/
+*.sqlite3
+*.sqlite3-journal
+*.db
+
+# --- Editors / OS -----------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

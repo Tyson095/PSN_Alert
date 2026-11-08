@@ -1,141 +1,244 @@
-# PlayStation Gift Card Alert Bot
+# PSN Gift Card Alert Bot
 
-A personal Telegram alert service for PSN gift-card availability, price reductions,
-discount text and cashback text. It uses Python, Requests, BeautifulSoup, APScheduler
-and SQLite. It does **not** use an LLM for routine checks.
+A Telegram alert bot that watches Indian retailers for PlayStation gift cards
+(₹1,000 / ₹2,000 / ₹3,000 / ₹4,000 / ₹5,000) and notifies you about:
 
-## What is implemented
+- **Back in stock** (including `OUT_OF_STOCK → UNKNOWN → IN_STOCK`)
+- **Price drops**
+- **Discount / cashback text changes**
+- **A daily availability report** at 09:00 Asia/Kolkata
 
-- Telegram `/start`, `/status`, `/report` and `/help`
-- One-minute scheduler (minimum configured interval is 60 seconds)
-- SQLite snapshots and event history
-- Back-in-stock detection (after a baseline has been recorded)
-- Price-drop detection when a reliable price selector is configured
-- Change detection for discount and cashback text when selectors are configured
-- Daily report at 09:00 Asia/Kolkata by default
-- Per-product enable/disable and retailer-specific CSS selectors/patterns
-- Errors are logged; unknown stock state is not treated as in-stock
+It runs as a **one-shot job on GitHub Actions**: start, check each enabled
+product once, send any notifications, write state, exit. No server, no
+long-lived process, no database — state lives in the committed JSON file
+`state/state.json`.
 
-## Important limitations
+Detection logic is shared by both entry points in
+`psn_gift_card_alert_bot/core.py`, so local runs and CI runs behave identically.
 
-1. **Retailer-specific setup is required.** Product pages differ, and selectors can change.
-   The included Rooter URL is a starting point only; its denomination variants need
-   variant-specific selectors or URLs before enabling reliable per-denomination alerts.
-2. Amazon PA-API 5 is deprecated. Amazon's current Creators API requires Associates
-   eligibility and credentials. This starter does not pretend to integrate with Amazon
-   without those credentials. Add an authorized API adapter if eligible.
-3. Paytm and other retailers may require login, JavaScript, or anti-bot checks. Do not
-   bypass CAPTCHAs, access controls, or site restrictions. Use official APIs/feeds or
-   permitted access methods.
-4. A one-minute interval is a scheduler target, not a promise that every retailer permits
-   one-minute requests. Respect each site's terms, robots guidance, rate limits and API
-   quotas. Increase the interval if a retailer objects or returns 429/403.
-5. Cashback/discount selectors only detect visible page text. They cannot reliably
-   calculate bank-specific, account-specific, wallet-specific or coupon-conditioned
-   offers. Such offers need their own verified data source and rules.
-6. A page may list several denominations at once. Configure selectors that scope the
-   stock indicator to the exact denomination; otherwise the result may be ambiguous.
-7. This is an alert tool, not an auto-purchaser. It will not log in, add to cart, or buy.
+---
 
-## Setup (Windows PowerShell)
+## Repository layout
 
-1. Install Python 3.11 or newer from https://www.python.org/downloads/.
-2. Extract this folder.
-3. Open PowerShell in this folder and run:
+| Path | Purpose |
+| --- | --- |
+| `github_runner.py` | CI entry point: one monitoring cycle, then exit |
+| `.github/workflows/monitor.yml` | Schedule, secrets, state persistence |
+| `psn_gift_card_alert_bot/core.py` | Config, state, extractors, alert rules, Telegram |
+| `psn_gift_card_alert_bot/bot.py` | Optional local long-running process (pairing, `/status`) |
+| `psn_gift_card_alert_bot/config/products.yaml` | Product list; `enabled: true/false` |
+| `state/state.json` | Persisted observations, chat id, last report date (committed) |
+| `tests/test_core.py` | 71 tests for state, transitions, dedup, extractors |
+| `requirements.txt` | Runtime dependencies (canonical) |
+| `requirements-dev.txt` | Test dependencies (`pytest`) |
 
-   ```powershell
-   py -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   pip install -r requirements.txt
-   Copy-Item .env.example .env
-   ```
+---
 
-4. In Telegram, open `@BotFather`, send `/newbot`, follow its prompts, and copy the bot
-   token. Paste it into `.env` as `TELEGRAM_BOT_TOKEN=...`. Keep this token secret.
-5. Start the program:
+## Setup
 
-   ```powershell
-   python bot.py
-   ```
+### 1. Create the Telegram bot (once)
 
-6. Open your new bot in Telegram and send `/start`. The first private chat to start an
-   unclaimed bot becomes its notification destination. Keep the bot private.
-7. Send `/status` or `/report` to test the connection.
+1. Open Telegram, talk to `@BotFather`, send `/newbot`, follow the prompts.
+2. Copy the **bot token**.
+3. Open your new bot and send `/start` — this links the bot to your private
+   chat. The runner picks it up on its next cycle (it reads the pending
+   `/start` via `getUpdates` and stores only the chat id in
+   `state/state.json`).
 
-## Setup (Linux/macOS)
+> **Never paste the token into a chat, an issue, or a commit.** It is read
+> only from the environment variable `TELEGRAM_BOT_TOKEN`, and every log line
+> and error message is scrubbed through `core.scrub()` before it is written.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# Edit .env and set TELEGRAM_BOT_TOKEN
-python bot.py
+### 2. Add the GitHub secret (once)
+
+1. Open the repository on GitHub → **Settings** → **Secrets and variables** →
+   **Actions**.
+2. Click **New repository secret**.
+3. Name: `TELEGRAM_BOT_TOKEN`
+4. Value: the token from BotFather (type it in the web form; it is not stored
+   in the repository and never appears in logs).
+5. Click **Add secret**.
+
+The workflow reads it as `${{ secrets.TELEGRAM_BOT_TOKEN }}` and passes it to
+the process via the environment. It is never echoed, never written to
+`state/state.json`, and never printed.
+
+### 3. Enable scheduled runs
+
+After the workflow file is on the default branch, GitHub enables the
+`schedule` trigger automatically. You can also start a run manually:
+
+**Actions → PSN Gift Card Monitor → Run workflow**
+
+---
+
+## Schedule (and why it is not exact)
+
+```yaml
+schedule:
+  - cron: '7,37 * * * *'   # every 30 minutes
+  - cron: '30 3 * * *'     # 09:00 Asia/Kolkata = 03:30 UTC
 ```
 
-## Configure products
+- Cron runs in **UTC**. Asia/Kolkata is UTC+05:30 with **no daylight saving
+  time**, so 09:00 IST is exactly 03:30 UTC.
+- **GitHub scheduled runs are not on time.** GitHub queues scheduled
+  workflows on busy minutes and routinely delays them by 5–30 minutes,
+  occasionally much longer. Treat the interval as "roughly every 30 minutes",
+  not a guarantee.
+- To reduce queuing, the 30-minute ticks use `:07` and `:37` instead of the
+  heavily loaded `:00` and `:30`.
+- Because a tick may be delayed or skipped, the runner checks **on every
+  cycle** whether the daily report is still due for today. Result: exactly
+  one report per day, even if the 09:00 tick runs at 09:20 or is missed
+  entirely (the next cycle sends it).
 
-Edit `config/products.yaml`. For each product entry:
+---
 
-- `id`: unique stable identifier
-- `retailer`: retailer name
-- `denomination`: face value in INR
-- `url`: exact product or variant URL
-- `availability_selector`: CSS selector for the exact variant's stock text
-- `price_selector`: CSS selector for current price
-- `discount_selector`: CSS selector for discount/offer text
-- `cashback_selector`: CSS selector for cashback text
-- `in_stock_patterns` / `out_of_stock_patterns`: text fragments matched against the
-  selected availability element (or whole page if no selector is supplied)
-- `enabled`: set to `true` only after testing the page and selectors
+## Running locally (optional)
 
-To inspect selectors, open the product page in a browser, use Developer Tools
-(F12 -> Elements), right-click the relevant element -> Copy -> Copy selector. Test it
-against the current page. Prefer stable attributes such as `data-testid` over generated
-CSS classes. If the retailer uses JavaScript-rendered content, this Requests-based starter
-may not see it; use an approved API or a carefully scoped browser adapter.
+Local runs are only needed to pair the bot or to debug a selector. Normal
+monitoring happens on GitHub Actions.
 
-**Do not enable the sample Rooter entries unchanged.** A shared page may contain
-"Out of Stock" for one option and "Buy Now" for another, which can create false alerts.
-First identify selectors that apply to the selected denomination, or configure exact
-variant URLs. Then set `enabled: true`.
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
 
-## Amazon India
+Put the token in a local `.env` (this file is gitignored and must never be
+committed):
 
-Amazon PA-API 5 has been deprecated and replaced by Creators API. Creators API access
-requires Amazon Associates enrollment, qualifying shipped sales, registration and
-credentials. See:
-https://affiliate-program.amazon.in/creatorsapi/docs/en-us/introduction
+```
+TELEGRAM_BOT_TOKEN=123456:ABC-your-token
+```
 
-Do not scrape around Amazon access controls. Once eligible, implement a dedicated
-Creators API adapter according to the current official docs and its request quotas.
-This starter intentionally leaves Amazon disabled until that integration is authorized.
+Then:
 
-## One-minute interval and hosting
+```powershell
+# One cycle, no notifications, no state write (safe to test anywhere)
+python github_runner.py --dry-run
 
-The default is 60 seconds. The scheduler runs enabled entries sequentially with a small
-delay between requests. If you monitor many products, a run can take longer than a
-minute; APScheduler will coalesce overlapping runs rather than stack them. API quotas,
-retailer terms and anti-bot controls take priority over the requested interval.
+# One real cycle (sends alerts, writes state/state.json)
+python github_runner.py
 
-For 24/7 operation, run on a small Linux VPS or a reliable always-on machine. On a VPS,
-use `systemd` to restart the process after crashes/reboots. Keep `.env`, `data/` and
-`bot.log` private; back up the SQLite database. Do not commit `.env` to Git.
+# Force the daily report right now
+python github_runner.py --report
+
+# Optional: long-running local bot with /start, /status, /report, /help
+python -m psn_gift_card_alert_bot.bot
+```
+
+**Do not run `bot.py` and the scheduled workflow at the same time.** Two
+Telegram pollers conflict (HTTP 409) and the two processes would race on the
+state file.
+
+Exit codes for `github_runner.py`: `0` cycle done (individual product
+failures are warnings), `1` fatal config/state error, `2` every enabled
+product failed (likely blocking or a page change).
+
+---
+
+## Configuration
+
+Edit `psn_gift_card_alert_bot/config/products.yaml`:
+
+| Field | Meaning |
+| --- | --- |
+| `id` | Stable unique id (state key — do not change it later) |
+| `retailer` / `denomination` | Labels used in alerts and reports |
+| `url` | Exact product/variant URL |
+| `availability_selector` | CSS selector for the stock text of *that* variant |
+| `price_selector` | CSS selector for the price |
+| `discount_selector` / `cashback_selector` | Optional offer text selectors |
+| `in_stock_patterns` / `out_of_stock_patterns` | Phrases matched against the selected text |
+| `enabled` | `true` only after the URL and selectors are verified |
+
+Safety rules that are enforced by the code, not by convention:
+
+- An observation that cannot be read is recorded as `UNKNOWN` and **never**
+  counts as out of stock, and never triggers an alert by itself.
+- The first successful observation is a **baseline**: it records state and
+  raises nothing, so the first run cannot burst false alerts.
+- `RESTOCK` fires only when the previous *known* state was `OUT_OF_STOCK`.
+  A baseline discovery (`UNKNOWN → IN_STOCK`) is not reported as a restock.
+- Duplicate alerts are suppressed while the state stays the same.
+
+---
+
+## Retailer coverage (verified 2026-11)
+
+| Retailer | Status | Notes |
+| --- | --- | --- |
+| **Rooter** (`shop.rooter.gg`) | ✅ **Enabled, verified** | Server-rendered Next.js page; `productData.baseVariations` carries all five variants with per-variant `outOfStock`, `sellPrice`, `proSellPrice` and cashback. `robots.txt` allows crawling. 5 entries enabled. |
+| **Amazon India** | ❌ Disabled | Product/search pages return HTTP **503** to non-browser clients (bot protection). Needs the official **Creators API** (PA-API 5 is deprecated) plus Associates credentials. Do not attempt to bypass the blocking. |
+| **Games The Shop** | ❌ Disabled | Product data is fetched client-side from `/api/`, which `robots.txt` explicitly `Disallow`s. Respect it; needs an official feed/API. |
+| **Paytm** | ❌ Disabled | Search returns a generic marketing page; no server-rendered listings. |
+| **Snapdeal** | ❌ Disabled | Search returns unrelated results; no genuine PSN listings found. |
+| **Flipkart / Croma / Vijay Sales** | ⬜ Unverified | Left in the config as documented placeholders. |
+
+### What still needs attention
+
+These are the entries that must stay disabled until someone verifies a real
+URL and selectors (open the page, DevTools → right-click → *Copy selector*,
+test against the live page):
+
+1. **Amazon India** — blocked (503). Only an official Creators API adapter
+   can enable this.
+2. **Games The Shop** — needs an official data source; its `/api/` path is
+   disallowed by robots.txt.
+3. **Paytm** — needs a server-rendered or official listing URL.
+4. **Snapdeal / Flipkart / Croma / Vijay Sales** — candidate URLs and
+   denomination-scoped selectors have not been verified at all.
+5. For any page that lists several denominations at once, the selector must
+   be scoped to the exact denomination — otherwise "out of stock" for one
+   variant can be read as stock for another.
+
+No working product URLs or selectors were invented. Only the five Rooter
+entries are enabled because they were checked against the live page.
+
+---
+
+## Terms, robots and rate limits
+
+- One request per product per cycle, with a configurable
+  `REQUEST_DELAY_SECONDS` (default 2s) between requests — about 48 cycles/day.
+- No CAPTCHA solving, no authentication bypass, no anti-bot evasion. If a
+  retailer blocks the bot or returns 429/403, the correct response is to slow
+  down or disable that entry, not to work around it.
+- Unknown/blocked results are recorded as `UNKNOWN` and reported as such.
+
+---
+
+## Tests
+
+```powershell
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+Covers state persistence, stock transitions (including
+`OUT → UNKNOWN → IN`), price drops, duplicate suppression, Rooter and generic
+HTML extractors, safety rules (unknown never counts as in/out of stock),
+report scheduling, money parsing and token scrubbing.
+
+---
 
 ## Troubleshooting
 
-- No Telegram alerts: confirm the token, send `/start`, check `bot.log`.
-- `403`/`429`: stop or slow checks for that retailer; do not attempt to evade blocks.
-- `UNKNOWN`: the page did not contain a recognized stock phrase or the selector was
-  incorrect. This is safer than a false positive.
-- Wrong stock for a denomination: use a variant-specific URL or a selector scoped to
-  that exact denomination.
-- Price missing: configure `price_selector` to target the numeric price element.
-- Daily report time: set `DAILY_REPORT_HOUR` and `DAILY_REPORT_MINUTE` in `.env`
-  (24-hour local time, default 09:00 IST).
+- **No alerts** — confirm the secret exists, send `/start` to the bot, check
+  the Actions log for `Linked Telegram chat id ending ...xxxx`.
+- **`UNKNOWN` status** — the page did not contain a recognized phrase or the
+  selector changed. This is safer than a false positive; inspect the selector.
+- **Exit code 2** — every enabled product failed: the retailer is likely
+  blocking the runner or the page changed.
+- **State push warnings** — the run still completed; the next run recomputes
+  state from the repository.
+- **Missed/delayed runs** — expected GitHub behaviour for scheduled
+  workflows; see the schedule section above.
 
-## Before going live
+## Before going live with more retailers
 
-Test every configured product manually against the retailer page. Confirm at least one
-known in-stock and one known out-of-stock state where possible. Leave ambiguous products
-disabled until selectors are verified.
+Test each new entry manually against the live page, confirm at least one
+known in-stock and one known out-of-stock state, then set `enabled: true`.
+This is an alert tool only — it never logs in, adds to cart, or purchases.

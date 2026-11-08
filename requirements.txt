@@ -1,0 +1,8 @@
+requests>=2.32,<3
+beautifulsoup4>=4.12,<5
+PyYAML>=6.0,<7
+python-dotenv>=1.0,<2
+# Only needed by the optional local bot.py (github_runner.py does not use it),
+# but installed everywhere so `python -m psn_gift_card_alert_bot.bot` works
+# right after `pip install -r requirements.txt`.
+APScheduler>=3.10,<4
