@@ -1,0 +1,133 @@
+# Add one entry per product/denomination/retailer.
+# Selectors are optional. If the page has no clear stock indicator, status stays UNKNOWN
+# rather than incorrectly reporting the item as available.
+products:
+  - id: rooter-psn-1000
+    retailer: Rooter
+    denomination: 1000
+    url: https://shop.rooter.gg/product/playstation-gift-cards
+    # Rooter uses selectable variants; page-wide text alone may not identify the
+    # selected denomination's stock. Verify and add selectors after inspecting the page.
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns:
+      - "in stock"
+      - "available"
+      - "buy now"
+    out_of_stock_patterns:
+      - "out of stock"
+      - "sold out"
+    enabled: false
+  - id: rooter-psn-2000
+    retailer: Rooter
+    denomination: 2000
+    url: https://shop.rooter.gg/product/playstation-gift-cards
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "available", "buy now"]
+    out_of_stock_patterns: ["out of stock", "sold out"]
+    enabled: false
+  - id: rooter-psn-3000
+    retailer: Rooter
+    denomination: 3000
+    url: https://shop.rooter.gg/product/playstation-gift-cards
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "available", "buy now"]
+    out_of_stock_patterns: ["out of stock", "sold out"]
+    enabled: false
+  - id: rooter-psn-4000
+    retailer: Rooter
+    denomination: 4000
+    url: https://shop.rooter.gg/product/playstation-gift-cards
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "available", "buy now"]
+    out_of_stock_patterns: ["out of stock", "sold out"]
+    enabled: false
+  - id: rooter-psn-5000
+    retailer: Rooter
+    denomination: 5000
+    url: https://shop.rooter.gg/product/playstation-gift-cards
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "available", "buy now"]
+    out_of_stock_patterns: ["out of stock", "sold out"]
+    enabled: false
+
+# Add Amazon India, Paytm, Games The Shop and other retailer entries here.
+# For every entry, use the exact product/variant URL and selectors/patterns verified
+# against that retailer's page. Do not guess selectors or treat a product listing
+# page as proof that a specific denomination is in stock.
+
+  - id: gamestheshop-psn-1000
+    retailer: Games The Shop
+    denomination: 1000
+    url: https://www.gamestheshop.com/search?condition=Digital&platforms=PlayStation%2CPS5%2CPS4%2CPSN
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "sold out"]
+    enabled: false
+  - id: gamestheshop-psn-2000
+    retailer: Games The Shop
+    denomination: 2000
+    url: https://www.gamestheshop.com/search?condition=Digital&platforms=PlayStation%2CPS5%2CPS4%2CPSN
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "sold out"]
+    enabled: false
+  - id: gamestheshop-psn-3000
+    retailer: Games The Shop
+    denomination: 3000
+    url: https://www.gamestheshop.com/search?condition=Digital&platforms=PlayStation%2CPS5%2CPS4%2CPSN
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "sold out"]
+    enabled: false
+  - id: gamestheshop-psn-4000
+    retailer: Games The Shop
+    denomination: 4000
+    url: https://www.gamestheshop.com/search?condition=Digital&platforms=PlayStation%2CPS5%2CPS4%2CPSN
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "sold out"]
+    enabled: false
+  - id: gamestheshop-psn-5000
+    retailer: Games The Shop
+    denomination: 5000
+    url: https://www.gamestheshop.com/search?condition=Digital&platforms=PlayStation%2CPS5%2CPS4%2CPSN
+    availability_selector: ""
+    price_selector: ""
+    discount_selector: ""
+    cashback_selector: ""
+    in_stock_patterns: ["in stock", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "sold out"]
+    enabled: false
+
+# Candidate discovery URLs (not yet configured as active monitors):
+# Amazon India search: https://www.amazon.in/s?k=playstation+gift+card
+# Paytm: PSN-specific public listing not confirmed; inspect the Gift Cards catalogue in-app.
+# Games The Shop exact ₹1,000 product page:
+# https://www.gamestheshop.com/product/2153a461-7203-4802-aac4-283be4c775d3?variant=09df672e-b598-4b2d-9b3e-e1ca1dd9d205
