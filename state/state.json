@@ -1,6 +1,13 @@
 {
   "chat_id": "5618478015",
-  "events": [],
+  "events": [
+    {
+      "at": "2026-11-10T00:04:53+05:30",
+      "message": "🟢 BACK IN STOCK\ne2z Store PSN ₹2000\nLink: https://e2zstore.com/product/rs-2000-playstation-network-wallet-top-up/\nPrice: ₹2,000.00",
+      "product_id": "e2z-psn-2000",
+      "type": "RESTOCK"
+    }
+  ],
   "last_daily_report_date": "2026-11-09",
   "products": {
     "e2z-psn-1000": {
@@ -20,12 +27,12 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-09T22:21:55+05:30",
+      "last_changed_at": "2026-11-10T00:04:53+05:30",
       "last_error": "",
-      "last_known_status": "OUT_OF_STOCK",
+      "last_known_status": "IN_STOCK",
       "note": "",
       "price": 2000.0,
-      "status": "OUT_OF_STOCK"
+      "status": "IN_STOCK"
     },
     "e2z-psn-3000": {
       "baseline": true,
