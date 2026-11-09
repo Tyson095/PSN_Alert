@@ -15,6 +15,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pytest
+from bs4 import BeautifulSoup
 
 from psn_gift_card_alert_bot import core
 
@@ -523,6 +524,219 @@ class TestHtmlExtractor:
             in_stock_patterns=["in stock"], out_of_stock_patterns=["out"],
         ))
         assert result["price"] == 1000.0
+
+
+class TestClassBasedAvailability:
+    """WooCommerce-style stores signal stock in the class, not the text.
+
+    e2z is the motivating case: an in-stock card says only
+    "Delivery By: 09/11/2026 - 17/11/2026" while the class carries
+    ``stock in-stock``. Text matching alone would read that as UNKNOWN and
+    silently miss a restock.
+    """
+
+    @staticmethod
+    def _page(cls: str, text: str) -> str:
+        return (f'<p class="stock {cls}">{text}</p>'
+                f'<span class="price">₹1,000.00</span>')
+
+    @staticmethod
+    def _product(**extra):
+        base = {
+            "extractor": "html_text",
+            "availability_selector": "p.stock",
+            "price_selector": ".price",
+            "in_stock_classes": ["in-stock"],
+            "out_of_stock_classes": ["out-of-stock"],
+            "in_stock_patterns": ["order it now"],
+            "out_of_stock_patterns": ["out of stock"],
+        }
+        base.update(extra)
+        return product(**base)
+
+    def test_in_stock_class_with_unrelated_text(self):
+        """Delivery-date text must not hide a real in-stock signal."""
+        page = self._page("in-stock", "Delivery By: 09/11/2026 - 17/11/2026")
+        result = core.extract_html(page, self._product())
+        assert result["status"] == core.IN_STOCK
+
+    def test_out_of_stock_class_with_unrelated_text(self):
+        """Free-form wording that matches no text pattern still reads out."""
+        page = self._page(
+            "out-of-stock",
+            "Currently unavailable. Please check back later for stock updates.",
+        )
+        result = core.extract_html(page, self._product())
+        assert result["status"] == core.OUT_OF_STOCK
+
+    def test_class_wins_over_contradictory_text(self):
+        page = self._page("in-stock", "Out of stock")
+        result = core.extract_html(page, self._product())
+        assert result["status"] == core.IN_STOCK
+
+    def test_contradictory_classes_are_unknown_not_a_guess(self):
+        """Both classes present: guessing could invent or hide a restock."""
+        page = '<p class="stock in-stock out-of-stock">???</p>'
+        result = core.extract_html(page, self._product())
+        assert result["status"] == core.UNKNOWN
+
+    def test_unconfigured_classes_fall_back_to_text_patterns(self):
+        page = self._page("in-stock", "Out of stock")
+        cfg = self._product(in_stock_classes=[], out_of_stock_classes=[])
+        result = core.extract_html(page, cfg)
+        assert result["status"] == core.OUT_OF_STOCK
+
+    def test_no_class_match_falls_back_to_text_patterns(self):
+        page = self._page("some-other-state", "Out of stock")
+        result = core.extract_html(page, self._product())
+        assert result["status"] == core.OUT_OF_STOCK
+
+    def test_no_class_match_and_no_text_match_is_unknown(self):
+        page = self._page("some-other-state", "Delivery By: 09/11 - 17/11")
+        result = core.extract_html(page, self._product())
+        assert result["status"] == core.UNKNOWN
+
+    def test_missing_selector_still_short_circuits_to_unknown(self):
+        """Class config must not weaken the missing-selector guard."""
+        page = self._page("out-of-stock", "Out of stock")
+        cfg = self._product(availability_selector="div.nope")
+        result = core.extract_html(page, cfg)
+        assert result["status"] == core.UNKNOWN
+        assert "matched nothing" in result["note"]
+
+    def test_no_element_and_no_class_config_is_none(self):
+        assert core.status_from_classes(None, {}) is None
+        assert core.status_from_classes(None, {"in_stock_classes": ["in-stock"]}) is None
+
+    def test_element_without_class_config_is_none(self):
+        soup = BeautifulSoup('<p class="stock in-stock">x</p>', "html.parser")
+        el = soup.select_one("p")
+        assert core.status_from_classes(el, {}) is None
+        assert core.status_from_classes(
+            el, {"in_stock_classes": [], "out_of_stock_classes": []}
+        ) is None
+
+    def test_class_match_is_case_insensitive(self):
+        soup = BeautifulSoup('<p class="Stock In-Stock">x</p>', "html.parser")
+        el = soup.select_one("p")
+        cfg = {"in_stock_classes": ["IN-STOCK"], "out_of_stock_classes": []}
+        assert core.status_from_classes(el, cfg) == core.IN_STOCK
+
+
+# =========================================================================== #
+# 6b. schema.org JSON-LD extractor
+# =========================================================================== #
+class TestJsonLdExtractor:
+    """StanShop publishes per-denomination offers as JSON-LD.
+
+    The availability vocabulary is fixed by schema.org, unlike the visible
+    card wording, so it is the signal worth trusting.
+    """
+
+    @staticmethod
+    def _page(offers: str) -> str:
+        return f'<script type="application/ld+json">{{"@type":"Product","offers":{offers}}}</script>'
+
+    @staticmethod
+    def _run(html: str, denomination):
+        return core.extract_jsonld(
+            html, {"denomination": denomination, "extractor": "jsonld_offers"}
+        )
+
+    def test_bare_offer_in_stock(self):
+        page = self._page('{"@type":"Offer","price":"1000",'
+                          '"availability":"https://schema.org/InStock"}')
+        result = self._run(page, 1000)
+        assert result["status"] == core.IN_STOCK
+        assert result["price"] == 1000.0
+
+    def test_bare_offer_out_of_stock(self):
+        page = self._page('{"@type":"Offer","price":"1000",'
+                          '"availability":"https://schema.org/OutOfStock"}')
+        assert self._run(page, 1000)["status"] == core.OUT_OF_STOCK
+
+    def test_aggregate_offer_nested_list(self):
+        page = self._page(
+            '{"@type":"AggregateOffer","lowPrice":"1000","highPrice":"4000",'
+            '"offers":[{"sku":"1","price":"1000",'
+            '"availability":"https://schema.org/OutOfStock"},'
+            '{"sku":"2","price":"2000",'
+            '"availability":"https://schema.org/InStock"}]}'
+        )
+        assert self._run(page, 2000)["status"] == core.IN_STOCK
+        assert self._run(page, 1000)["status"] == core.OUT_OF_STOCK
+
+    def test_top_level_list_of_products(self):
+        page = ('<script type="application/ld+json">[{"@type":"Product",'
+                '"offers":[{"price":"3000",'
+                '"availability":"https://schema.org/InStock"}]}]</script>')
+        assert self._run(page, 3000)["status"] == core.IN_STOCK
+
+    def test_missing_denomination_is_unknown_not_out_of_stock(self):
+        """A value the store does not sell must not read as a stockout."""
+        page = self._page('{"@type":"Offer","price":"1000",'
+                          '"availability":"https://schema.org/InStock"}')
+        result = self._run(page, 5000)
+        assert result["status"] == core.UNKNOWN
+        assert "not among published offers" in result["note"]
+
+    def test_absent_availability_is_unknown(self):
+        page = self._page('{"@type":"Offer","price":"1000"}')
+        assert self._run(page, 1000)["status"] == core.UNKNOWN
+
+    @pytest.mark.parametrize("value", ["PreOrder", "BackOrder", "Discontinued",
+                                       "SoldOut", "https://example.org/Something"])
+    def test_non_binary_availability_is_unknown(self, value):
+        """Neither 'buy now' nor 'sold out' -- do not guess either way."""
+        page = self._page(f'{{"@type":"Offer","price":"1000",'
+                          f'"availability":"https://schema.org/{value}"}}'
+                          if not value.startswith("http")
+                          else f'{{"@type":"Offer","price":"1000",'
+                               f'"availability":"{value}"}}')
+        assert self._run(page, 1000)["status"] == core.UNKNOWN
+
+    def test_no_json_ld_is_unknown(self):
+        assert self._run("<html><body><p>nothing</p></body></html>",
+                         1000)["status"] == core.UNKNOWN
+
+    def test_malformed_json_ld_does_not_raise(self):
+        page = '<script type="application/ld+json">{not json</script>'
+        result = self._run(page, 1000)
+        assert result["status"] == core.UNKNOWN
+        assert result["ok"] is True
+
+    def test_non_product_json_ld_is_ignored(self):
+        page = ('<script type="application/ld+json">{"@type":"FAQPage",'
+                '"mainEntity":[]}</script>')
+        assert self._run(page, 1000)["status"] == core.UNKNOWN
+
+    def test_string_price_that_is_not_numeric_is_unknown(self):
+        page = self._page('{"@type":"Offer","price":"free",'
+                          '"availability":"https://schema.org/InStock"}')
+        assert self._run(page, 1000)["status"] == core.UNKNOWN
+
+    def test_cashback_read_from_this_denomination_only(self):
+        """Another value's offer must never be attributed to this one."""
+        page = self._page(
+            '{"@type":"AggregateOffer","offers":['
+            '{"price":"1000","availability":"https://schema.org/InStock"},'
+            '{"price":"2000","availability":"https://schema.org/InStock"}]}'
+        ) + ('<a>Coupon Worth ₹1000 5 % cashback Get Upto 50 Coins</a>'
+             '<a>Coupon Worth ₹2000 12 % cashback Get Upto 999 Coins</a>')
+        result = self._run(page, 2000)
+        assert result["cashback"] == "12% cashback"
+        assert result["discount"] == "Get Upto 999 Coins"
+
+    def test_cashback_absent_is_empty_string(self):
+        page = self._page('{"@type":"Offer","price":"1000",'
+                          '"availability":"https://schema.org/InStock"}')
+        result = self._run(page, 1000)
+        assert result["cashback"] == ""
+        assert result["discount"] == ""
+
+    def test_registered_as_an_extractor(self):
+        assert "jsonld_offers" in core.EXTRACTORS
+        assert core.EXTRACTORS["jsonld_offers"] is core.extract_jsonld
 
 
 # =========================================================================== #

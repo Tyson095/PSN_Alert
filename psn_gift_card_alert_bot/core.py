@@ -403,6 +403,39 @@ def selected_text(soup: BeautifulSoup, selector: str | None) -> str:
     return element.get_text(" ", strip=True) if element else ""
 
 
+def status_from_classes(element: Any, product: dict[str, Any]) -> str | None:
+    """Read availability off the element's CSS classes.
+
+    Some stores (WooCommerce among them) put the real signal in the class list
+    -- ``class="stock out-of-stock"`` -- while the visible text is free-form
+    and changes per product ("Delivery By: 10/11 - 18/11"). Matching that text
+    is guesswork, so when class lists are configured they take priority.
+
+    Returns ``None`` when nothing is configured or nothing matched, which tells
+    the caller to fall back to the text patterns.
+    """
+    if element is None:
+        return None
+    out_classes = {str(c).lower() for c in product.get("out_of_stock_classes") or []}
+    in_classes = {str(c).lower() for c in product.get("in_stock_classes") or []}
+    if not out_classes and not in_classes:
+        return None
+
+    present = {str(c).lower() for c in element.get("class") or []}
+    out_hit = bool(out_classes & present)
+    in_hit = bool(in_classes & present)
+
+    if out_hit and not in_hit:
+        return OUT_OF_STOCK
+    if in_hit and not out_hit:
+        return IN_STOCK
+    if out_hit and in_hit:
+        # Contradictory signal. Guessing either way could invent a restock or
+        # hide one, so report that we could not tell.
+        return UNKNOWN
+    return None
+
+
 def extract_html(html: str, product: dict[str, Any]) -> dict[str, Any]:
     """Generic CSS-selector extractor for server-rendered pages.
 
@@ -415,6 +448,7 @@ def extract_html(html: str, product: dict[str, Any]) -> dict[str, Any]:
     soup = BeautifulSoup(html, "html.parser")
     selector = product.get("availability_selector") or ""
 
+    element = None
     if selector:
         element = soup.select_one(selector)
         if element is None:
@@ -427,15 +461,17 @@ def extract_html(html: str, product: dict[str, Any]) -> dict[str, Any]:
     else:
         haystack = soup.get_text(" ", strip=True).lower()
 
-    out_patterns = [str(p).lower() for p in product.get("out_of_stock_patterns") or []]
-    in_patterns = [str(p).lower() for p in product.get("in_stock_patterns") or []]
+    status = status_from_classes(element, product)
+    if status is None:
+        out_patterns = [str(p).lower() for p in product.get("out_of_stock_patterns") or []]
+        in_patterns = [str(p).lower() for p in product.get("in_stock_patterns") or []]
 
-    if any(pattern in haystack for pattern in out_patterns):
-        status = OUT_OF_STOCK
-    elif any(pattern in haystack for pattern in in_patterns):
-        status = IN_STOCK
-    else:
-        status = UNKNOWN
+        if any(pattern in haystack for pattern in out_patterns):
+            status = OUT_OF_STOCK
+        elif any(pattern in haystack for pattern in in_patterns):
+            status = IN_STOCK
+        else:
+            status = UNKNOWN
 
     price_text = selected_text(soup, product.get("price_selector"))
     price = parse_money(price_text)
@@ -453,9 +489,128 @@ def extract_html(html: str, product: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def iter_jsonld_offers(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    """Collect every schema.org Offer published in the page's JSON-LD.
+
+    Sites publish this specifically so machines can read price and
+    availability, and unlike the visible card text the vocabulary is fixed
+    (``schema.org/InStock`` / ``schema.org/OutOfStock``). Handles the three
+    shapes seen in the wild: a bare offer, a list, and an AggregateOffer
+    wrapping a nested list.
+    """
+    offers: list[dict[str, Any]] = []
+    for block in soup.find_all("script", type="application/ld+json"):
+        raw = block.string or block.get_text() or ""
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except (ValueError, TypeError):
+            continue
+        items = data if isinstance(data, list) else [data]
+        for item in items:
+            if not isinstance(item, dict) or item.get("@type") != "Product":
+                continue
+            nested = item.get("offers")
+            if isinstance(nested, dict):
+                inner = nested.get("offers")
+                candidates = inner if isinstance(inner, list) else [nested]
+            elif isinstance(nested, list):
+                candidates = nested
+            else:
+                candidates = []
+            offers.extend(c for c in candidates if isinstance(c, dict))
+    return offers
+
+
+def extract_jsonld(html: str, product: dict[str, Any]) -> dict[str, Any]:
+    """Read one denomination from schema.org JSON-LD offers.
+
+    Used by stores that publish per-denomination offers with an explicit
+    availability URL. A missing offer is ``UNKNOWN``, never ``OUT_OF_STOCK``:
+    "not listed" and "not in stock" are different facts.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    denomination = product.get("denomination")
+    offers = iter_jsonld_offers(soup)
+
+    if not offers:
+        return {
+            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+            "cashback": "", "error": "",
+            "note": "no schema.org offers found in page JSON-LD",
+        }
+
+    match: dict[str, Any] | None = None
+    for offer in offers:
+        raw_price = offer.get("price")
+        if raw_price is None or denomination is None:
+            continue
+        try:
+            if float(raw_price) == float(denomination):  # type: ignore[arg-type]
+                match = offer
+                break
+        except (TypeError, ValueError):
+            continue
+
+    if match is None:
+        return {
+            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+            "cashback": "", "error": "",
+            "note": f"denomination {denomination} not among published offers",
+        }
+
+    availability = str(match.get("availability") or "")
+    if "OutOfStock" in availability:
+        status = OUT_OF_STOCK
+    elif "InStock" in availability:
+        status = IN_STOCK
+    else:
+        # PreOrder, BackOrder, Discontinued, or an absent field. None of those
+        # mean "buy it now", and none mean "sold out" either.
+        status = UNKNOWN
+
+    price: float | None = None
+    try:
+        price = float(match.get("price"))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        price = None
+
+    # The visible cards carry the offer wording that JSON-LD does not: the
+    # cashback percentage and any coin bonus. Scope the scan to the card that
+    # names this denomination so another value's offer is never attributed here.
+    cashback = ""
+    discount = ""
+    needle = f"Coupon Worth ₹{denomination}" if denomination is not None else None
+    if needle:
+        for anchor in soup.find_all("a"):
+            text = anchor.get_text(" ", strip=True)
+            if needle not in text:
+                continue
+            cb = re.search(r"(\d+)\s*%\s*cashback", text, re.I)
+            if cb:
+                cashback = f"{cb.group(1)}% cashback"
+            coins = re.search(r"(Get Upto [\d,]+ Coins)", text, re.I)
+            if coins:
+                discount = coins.group(1)
+            break
+
+    return {
+        "ok": True,
+        "status": status,
+        "price": price,
+        "discount": discount[:250],
+        "cashback": cashback[:250],
+        "error": "",
+        "note": "",
+    }
+
+
 EXTRACTORS = {
     "rooter_rsc": extract_rooter,
     "html_text": extract_html,
+    "jsonld_offers": extract_jsonld,
 }
 
 

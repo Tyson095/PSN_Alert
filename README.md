@@ -28,7 +28,7 @@ Detection logic is shared by both entry points in
 | `psn_gift_card_alert_bot/bot.py` | Optional local long-running process (pairing, `/status`) |
 | `psn_gift_card_alert_bot/config/products.yaml` | Product list; `enabled: true/false` |
 | `state/state.json` | Persisted observations, chat id, last report date (committed) |
-| `tests/test_core.py` | 71 tests for state, transitions, dedup, extractors |
+| `tests/test_core.py` | 110 tests for state, transitions, dedup, extractors |
 | `requirements.txt` | Runtime dependencies (canonical) |
 | `requirements-dev.txt` | Test dependencies (`pytest`) |
 
@@ -148,11 +148,28 @@ Edit `psn_gift_card_alert_bot/config/products.yaml`:
 | `id` | Stable unique id (state key — do not change it later) |
 | `retailer` / `denomination` | Labels used in alerts and reports |
 | `url` | Exact product/variant URL |
+| `extractor` | `rooter_rsc`, `html_text` or `jsonld_offers` |
 | `availability_selector` | CSS selector for the stock text of *that* variant |
 | `price_selector` | CSS selector for the price |
 | `discount_selector` / `cashback_selector` | Optional offer text selectors |
 | `in_stock_patterns` / `out_of_stock_patterns` | Phrases matched against the selected text |
+| `in_stock_classes` / `out_of_stock_classes` | CSS classes read off the matched element instead of its text |
 | `enabled` | `true` only after the URL and selectors are verified |
+
+### Choosing an extractor
+
+| Extractor | Use when | Example |
+| --- | --- | --- |
+| `rooter_rsc` | The store ships a structured payload inside its HTML | Rooter |
+| `html_text` | Stock and price are in the server-rendered markup | e2z Store |
+| `jsonld_offers` | The store publishes schema.org JSON-LD offers | StanShop |
+
+`in_stock_classes` / `out_of_stock_classes` exist because some stores put the
+real signal in the element's class (`class="stock in-stock"`) while the visible
+text varies per product ("Delivery By: 09/11/2026 - 17/11/2026"). Text
+patterns alone would read that as `UNKNOWN` and silently miss a restock. When
+classes are configured they take priority; the text patterns remain as a
+fallback.
 
 Safety rules that are enforced by the code, not by convention:
 
@@ -171,11 +188,29 @@ Safety rules that are enforced by the code, not by convention:
 | Retailer | Status | Notes |
 | --- | --- | --- |
 | **Rooter** (`shop.rooter.gg`) | ✅ **Enabled, verified** | Server-rendered Next.js page; `productData.baseVariations` carries all five variants with per-variant `outOfStock`, `sellPrice`, `proSellPrice` and cashback. `robots.txt` allows crawling. 5 entries enabled. |
+| **e2z Store** (`e2zstore.com`) | ✅ **Enabled, verified** | WooCommerce. Previously sat behind a Cloudflare managed challenge and returned 403; it now answers a plain GET with full HTML and no challenge header, so **no bypass is needed or used**. `robots.txt` says `Allow: /`. Stock lives in the CSS class on `<p class="stock ...">`, not the text. 5 entries enabled (+1 disabled: Rs.7000 is outside the configured denomination set). |
+| **StanShop** (`www.stanshop.co`) | ✅ **Enabled, verified** | Next.js App Router, no WooCommerce markup. Publishes per-denomination schema.org JSON-LD offers with a fixed availability vocabulary. `robots.txt` says `Allow: /`. 4 entries enabled (+1 disabled: **no Rs.5000 card exists**). Note `store.getstan.app` returns HTTP 402 `DEPLOYMENT_DISABLED` and is dead. |
 | **Amazon India** | ❌ Disabled | Product/search pages return HTTP **503** to non-browser clients (bot protection). Needs the official **Creators API** (PA-API 5 is deprecated) plus Associates credentials. Do not attempt to bypass the blocking. |
 | **Games The Shop** | ❌ Disabled | Product data is fetched client-side from `/api/`, which `robots.txt` explicitly `Disallow`s. Respect it; needs an official feed/API. |
 | **Paytm** | ❌ Disabled | Search returns a generic marketing page; no server-rendered listings. |
 | **Snapdeal** | ❌ Disabled | Search returns unrelated results; no genuine PSN listings found. |
 | **Flipkart / Croma / Vijay Sales** | ⬜ Unverified | Left in the config as documented placeholders. |
+
+**14 entries are enabled across 3 retailers** (Rooter 5, e2z 5, StanShop 4),
+all PlayStation only.
+
+### Why Cloudflare bypass tools are not used
+
+`cloudscraper` and similar libraries exist specifically to defeat Cloudflare's
+anti-bot challenge. That is anti-bot evasion, which this project does not do —
+and in the one case where it was relevant (e2z) it turned out to be
+unnecessary: a plain request now succeeds. The tooling is also stale
+(`cloudscraper` last released 2023-04) and only targets legacy challenge
+pages, not modern managed challenges.
+
+Where a retailer is actually blocked, the blocker is rarely a Cloudflare JS
+challenge anyway: Amazon returns **503**, and Games The Shop's `/api/` is a
+**robots policy**. A bypass library would solve neither legitimately.
 
 ### What still needs attention
 
@@ -194,8 +229,9 @@ test against the live page):
    be scoped to the exact denomination — otherwise "out of stock" for one
    variant can be read as stock for another.
 
-No working product URLs or selectors were invented. Only the five Rooter
-entries are enabled because they were checked against the live page.
+No working product URLs or selectors were invented. The 14 enabled entries
+(Rooter, e2z Store, StanShop) were each checked against the live page before
+`enabled: true` was set.
 
 ---
 
@@ -218,8 +254,9 @@ python -m pytest
 ```
 
 Covers state persistence, stock transitions (including
-`OUT → UNKNOWN → IN`), price drops, duplicate suppression, Rooter and generic
-HTML extractors, safety rules (unknown never counts as in/out of stock),
+`OUT → UNKNOWN → IN`), price drops, duplicate suppression, the three extractors
+(`rooter_rsc`, `html_text`, `jsonld_offers`), class-based availability,
+safety rules (unknown never counts as in/out of stock),
 report scheduling, money parsing and token scrubbing.
 
 ---

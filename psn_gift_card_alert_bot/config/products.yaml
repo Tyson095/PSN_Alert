@@ -8,10 +8,15 @@
 # enabled: false  -> configured but NOT monitored. Unverified or blocked.
 #
 # extractor:
-#   rooter_rsc  -> reads the Next.js payload Rooter ships inside its HTML.
-#                  Gives a real per-denomination outOfStock flag + price.
-#   html_text   -> classic CSS selectors + text patterns, for pages whose data
-#                  is present in the server-rendered HTML.
+#   rooter_rsc    -> reads the Next.js payload Rooter ships inside its HTML.
+#                    Gives a real per-denomination outOfStock flag + price.
+#   html_text     -> classic CSS selectors + text patterns, for pages whose
+#                    data is present in the server-rendered HTML. Optional
+#                    in_stock_classes/out_of_stock_classes read the stock
+#                    signal off the element's CSS class, which is more stable
+#                    than wording that changes per product.
+#   jsonld_offers -> reads schema.org JSON-LD offers, for sites that publish
+#                    price and availability for machines rather than readers.
 #
 # Verify an entry before enabling it:
 #   python github_runner.py --dry-run
@@ -74,6 +79,167 @@ products:
     variant_pattern: 'Rs\.5000\b'
     enabled: true
     verification: verified-2026-11-08
+
+  # ── e2z Store ─────────────────────────────────────────────────────────────
+  # VERIFIED 2026-11-09. Earlier this store sat behind a Cloudflare managed
+  # challenge and returned 403 to every path; it now answers a plain GET with
+  # full server-rendered HTML (200, ~300-740 KB) and no challenge header.
+  # robots.txt: "User-agent: * / Allow: /". No bypass of any kind is used --
+  # a normal request is enough, so no circumvention is involved.
+  #
+  # This is a WooCommerce store. Its real availability signal is the CSS class
+  # on <p class="stock ...">, not the visible text: an in-stock card may say
+  # only "Delivery By: 09/11/2026 - 17/11/2026", which no text pattern would
+  # match. in_stock_classes/out_of_stock_classes read that class directly;
+  # the text patterns remain as a fallback if the markup ever changes.
+  #
+  # First run records a baseline and alerts nothing, by design.
+  - id: e2z-psn-1000
+    retailer: e2z Store
+    denomination: 1000
+    url: https://e2zstore.com/product/rs-1000-playstation-network-wallet-top-up/
+    extractor: html_text
+    availability_selector: p.stock
+    price_selector: p.price .woocommerce-Price-amount
+    in_stock_classes: ["in-stock"]
+    out_of_stock_classes: ["out-of-stock"]
+    in_stock_patterns: ["order it now", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "currently unavailable", "sold out"]
+    enabled: true
+    verification: verified-2026-11-09
+
+  - id: e2z-psn-2000
+    retailer: e2z Store
+    denomination: 2000
+    url: https://e2zstore.com/product/rs-2000-playstation-network-wallet-top-up/
+    extractor: html_text
+    availability_selector: p.stock
+    price_selector: p.price .woocommerce-Price-amount
+    in_stock_classes: ["in-stock"]
+    out_of_stock_classes: ["out-of-stock"]
+    in_stock_patterns: ["order it now", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "currently unavailable", "sold out"]
+    enabled: true
+    verification: verified-2026-11-09
+
+  - id: e2z-psn-3000
+    retailer: e2z Store
+    denomination: 3000
+    url: https://e2zstore.com/product/rs-3000-playstation-network-wallet-top-up/
+    extractor: html_text
+    availability_selector: p.stock
+    price_selector: p.price .woocommerce-Price-amount
+    in_stock_classes: ["in-stock"]
+    out_of_stock_classes: ["out-of-stock"]
+    in_stock_patterns: ["order it now", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "currently unavailable", "sold out"]
+    enabled: true
+    verification: verified-2026-11-09
+
+  - id: e2z-psn-4000
+    retailer: e2z Store
+    denomination: 4000
+    url: https://e2zstore.com/product/rs-4000-playstation-network-wallet-top-up/
+    extractor: html_text
+    availability_selector: p.stock
+    price_selector: p.price .woocommerce-Price-amount
+    in_stock_classes: ["in-stock"]
+    out_of_stock_classes: ["out-of-stock"]
+    in_stock_patterns: ["order it now", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "currently unavailable", "sold out"]
+    enabled: true
+    verification: verified-2026-11-09
+
+  - id: e2z-psn-5000
+    retailer: e2z Store
+    denomination: 5000
+    url: https://e2zstore.com/product/rs-5000-playstation-store-gift-card-wallet-top-up/
+    extractor: html_text
+    availability_selector: p.stock
+    price_selector: p.price .woocommerce-Price-amount
+    in_stock_classes: ["in-stock"]
+    out_of_stock_classes: ["out-of-stock"]
+    in_stock_patterns: ["order it now", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "currently unavailable", "sold out"]
+    enabled: true
+    verification: verified-2026-11-09
+
+  # e2z also lists a Rs.7000 PSN card (verified reachable, currently out of
+  # stock). It falls outside the configured denomination set, so it is left
+  # disabled rather than silently widening what gets monitored.
+  - id: e2z-psn-7000
+    retailer: e2z Store
+    denomination: 7000
+    url: https://e2zstore.com/product/rs-7000-sony-playstation-store-gift-card-wallet-top-up/
+    extractor: html_text
+    availability_selector: p.stock
+    price_selector: p.price .woocommerce-Price-amount
+    in_stock_classes: ["in-stock"]
+    out_of_stock_classes: ["out-of-stock"]
+    in_stock_patterns: ["order it now", "add to cart", "buy now"]
+    out_of_stock_patterns: ["out of stock", "currently unavailable", "sold out"]
+    enabled: false
+    verification: verified-2026-11-09
+    notes: "Reachable and readable; disabled only because Rs.7000 is outside the configured denomination set."
+
+  # ── StanShop ──────────────────────────────────────────────────────────────
+  # VERIFIED 2026-11-09. Two hostnames exist; only one is alive:
+  #   store.getstan.app  -> HTTP 402 "DEPLOYMENT_DISABLED" (Vercel). Dead.
+  #   www.stanshop.co    -> HTTP 200, full server-rendered HTML.
+  # robots.txt: "User-agent: * / Allow: /". Plain GET, no bypass of anything.
+  #
+  # This is a Next.js App Router site with no WooCommerce markup, so the
+  # html_text selectors do not apply. What it does publish is schema.org
+  # JSON-LD with one Offer per denomination and a fixed availability
+  # vocabulary (schema.org/InStock | OutOfStock) -- read by the jsonld_offers
+  # extractor. The visible cards add the cashback wording JSON-LD omits
+  # ("5 % cashback Get Upto 50 Coins"), scoped to this denomination only.
+  #
+  # Denominations offered: 1000, 2000, 3000, 4000. There is NO Rs.5000 card;
+  # asking for it correctly reports UNKNOWN rather than a false stockout.
+  # All four values live on one page, so they share the URL.
+  - id: stan-psn-1000
+    retailer: StanShop
+    denomination: 1000
+    url: https://www.stanshop.co/playstation-psn-gift-card-in-india
+    extractor: jsonld_offers
+    enabled: true
+    verification: verified-2026-11-09
+
+  - id: stan-psn-2000
+    retailer: StanShop
+    denomination: 2000
+    url: https://www.stanshop.co/playstation-psn-gift-card-in-india
+    extractor: jsonld_offers
+    enabled: true
+    verification: verified-2026-11-09
+
+  - id: stan-psn-3000
+    retailer: StanShop
+    denomination: 3000
+    url: https://www.stanshop.co/playstation-psn-gift-card-in-india
+    extractor: jsonld_offers
+    enabled: true
+    verification: verified-2026-11-09
+
+  - id: stan-psn-4000
+    retailer: StanShop
+    denomination: 4000
+    url: https://www.stanshop.co/playstation-psn-gift-card-in-india
+    extractor: jsonld_offers
+    enabled: true
+    verification: verified-2026-11-09
+
+  # Not sold by StanShop. Kept so the gap is documented rather than silent;
+  # jsonld_offers reports UNKNOWN for it, never OUT_OF_STOCK.
+  - id: stan-psn-5000
+    retailer: StanShop
+    denomination: 5000
+    url: https://www.stanshop.co/playstation-psn-gift-card-in-india
+    extractor: jsonld_offers
+    enabled: false
+    verification: verified-2026-11-09
+    notes: "StanShop publishes offers for 1000/2000/3000/4000 only. No Rs.5000 card exists."
 
   # ── Games The Shop ────────────────────────────────────────────────────────
   # DISABLED - data is not in the HTML.
