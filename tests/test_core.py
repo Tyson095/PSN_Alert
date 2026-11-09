@@ -884,6 +884,121 @@ class TestDailyReportDue:
 
 
 # =========================================================================== #
+# 8b. Per-URL fetch caching within one cycle
+# =========================================================================== #
+class TestObserveCached:
+    """Rooter's five variants and StanShop's four each live on one page.
+
+    Caching keeps a cycle at one request per distinct URL, which is what makes
+    a check every few minutes polite enough for the retailers.
+    """
+    A = "https://shop.example/psn"
+    B = "https://shop.example/psn-other"
+
+    @staticmethod
+    def _product(url, pid="p1"):
+        return product(
+            id=pid, url=url, extractor="html_text",
+            in_stock_patterns=["IN STOCK"],
+            out_of_stock_patterns=["SOLD OUT"],
+            in_stock_classes=[], out_of_stock_classes=[],
+        )
+
+    @staticmethod
+    def _serve(monkeypatch, pages):
+        """Serve canned pages and record every network request."""
+        calls = []
+
+        def fake(url, **_kwargs):
+            calls.append(url)
+            return pages[url]
+
+        monkeypatch.setattr(core, "fetch_html", fake)
+        return calls
+
+    def test_first_read_of_a_url_does_fetch(self, monkeypatch):
+        from github_runner import observe_cached
+        calls = self._serve(monkeypatch, {self.A: "<p>SOLD OUT</p>"})
+        obs, fetched = observe_cached(self._product(self.A), {})
+        assert fetched is True
+        assert calls == [self.A]
+        assert obs["ok"] is True
+        assert obs["status"] == core.OUT_OF_STOCK
+
+    def test_shared_url_is_fetched_once_per_cycle(self, monkeypatch):
+        from github_runner import observe_cached
+        calls = self._serve(monkeypatch, {self.A: "<p>SOLD OUT</p>"})
+        cache: dict = {}
+        observe_cached(self._product(self.A, "p1"), cache)
+        obs, fetched = observe_cached(self._product(self.A, "p2"), cache)
+        assert calls == [self.A]
+        assert fetched is False
+        assert obs["status"] == core.OUT_OF_STOCK
+
+    def test_cached_page_is_what_the_second_read_sees(self, monkeypatch):
+        """Prove the cache serves content, not just that it skipped a request."""
+        from github_runner import observe_cached
+        self._serve(monkeypatch, {self.A: "<p>SOLD OUT</p>",
+                                  self.B: "<p>IN STOCK</p>"})
+        cache: dict = {}
+        first, _ = observe_cached(self._product(self.A, "p1"), cache)
+        second, _ = observe_cached(self._product(self.B, "p2"), cache)
+        assert first["status"] == core.OUT_OF_STOCK
+        assert second["status"] == core.IN_STOCK
+
+    def test_distinct_urls_are_each_fetched(self, monkeypatch):
+        from github_runner import observe_cached
+        calls = self._serve(monkeypatch, {self.A: "<p>SOLD OUT</p>",
+                                          self.B: "<p>IN STOCK</p>"})
+        cache: dict = {}
+        observe_cached(self._product(self.A, "p1"), cache)
+        observe_cached(self._product(self.B, "p2"), cache)
+        assert calls == [self.A, self.B]
+
+    def test_product_without_url_never_fetches(self, monkeypatch):
+        from github_runner import observe_cached
+        calls = self._serve(monkeypatch, {})
+        obs, fetched = observe_cached({"id": "x", "extractor": "html_text"}, {})
+        assert calls == []
+        assert fetched is False
+        assert obs["ok"] is False
+        assert "no url" in obs["error"]
+
+    def test_failure_is_reported_as_failure_not_a_stock_state(self, monkeypatch):
+        """A dead host must never read as out of stock or as unknown-but-quiet."""
+        from github_runner import observe_cached
+
+        def boom(_url, **_kwargs):
+            raise ConnectionError("refused")
+
+        monkeypatch.setattr(core, "fetch_html", boom)
+        obs, fetched = observe_cached(self._product(self.A), {})
+        assert fetched is True
+        assert obs["ok"] is False
+        assert obs["status"] is None
+        assert "ConnectionError" in obs["error"]
+
+    def test_failure_is_attempted_once_per_cycle_not_once_per_product(self, monkeypatch):
+        """A hanging host costs a timeout per attempt; do not multiply it."""
+        from github_runner import observe_cached
+        attempts = []
+
+        def boom(url, **_kwargs):
+            attempts.append(url)
+            raise ConnectionError("refused")
+
+        monkeypatch.setattr(core, "fetch_html", boom)
+        cache: dict = {}
+        observe_cached(self._product(self.A, "p1"), cache)
+        assert len(attempts) == 1
+        obs, fetched = observe_cached(self._product(self.A, "p2"), cache)
+        assert len(attempts) == 1
+        assert fetched is False
+        assert obs["ok"] is False
+        assert "ConnectionError" in obs["error"]
+
+
+# =========================================================================== #
 # 9. Reporting and secret hygiene
 # =========================================================================== #
 class TestReportAndSecrets:

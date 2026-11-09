@@ -72,26 +72,131 @@ After the workflow file is on the default branch, GitHub enables the
 
 ---
 
-## Schedule (and why it is not exact)
+## Schedule (and how the 5-minute loop actually runs)
 
 ```yaml
+workflow_dispatch:             # fired from outside, every 5 minutes
 schedule:
-  - cron: '7,37 * * * *'   # every 30 minutes
-  - cron: '30 3 * * *'     # 09:00 Asia/Kolkata = 03:30 UTC
+  - cron: '7,37 * * * *'       # fallback: GitHub's own scheduler
+  - cron: '30 3 * * *'         # 09:00 Asia/Kolkata = 03:30 UTC
 ```
 
-- Cron runs in **UTC**. Asia/Kolkata is UTC+05:30 with **no daylight saving
-  time**, so 09:00 IST is exactly 03:30 UTC.
-- **GitHub scheduled runs are not on time.** GitHub queues scheduled
-  workflows on busy minutes and routinely delays them by 5–30 minutes,
-  occasionally much longer. Treat the interval as "roughly every 30 minutes",
-  not a guarantee.
-- To reduce queuing, the 30-minute ticks use `:07` and `:37` instead of the
-  heavily loaded `:00` and `:30`.
-- Because a tick may be delayed or skipped, the runner checks **on every
-  cycle** whether the daily report is still due for today. Result: exactly
-  one report per day, even if the 09:00 tick runs at 09:20 or is missed
-  entirely (the next cycle sends it).
+### Why GitHub's own scheduler is not the main trigger
+
+Measured from this repository's own run history:
+
+| gap between scheduled runs | observed |
+|---|---|
+| 01:55 → 05:28 | 3.5 h |
+| 05:28 → 11:41 | 6.0 h |
+| 11:41 → 17:29 | 5.8 h |
+| 17:29 → 22:19 | 4.8 h |
+| 22:19 → next | nothing for 2+ h |
+
+The `30 minutes` written in the YAML is not what happens — GitHub queues
+scheduled workflows on busy minutes and delays them by hours, sometimes
+skipping ticks entirely. By contrast a `workflow_dispatch` sent at 00:38:48
+had its run created at **00:38:50**: two seconds.
+
+That difference decides whether the bot is useful. The ₹2,000 and ₹4,000
+cards sell out in 10–15 minutes; against a five-hour check the chance of
+catching one is about 1 in 20, against a five-minute check it is effectively
+certain.
+
+### The external trigger
+
+An outside scheduler POSTs to the dispatch endpoint every five minutes.
+
+**Endpoint**
+
+```
+POST https://api.github.com/repos/Tyson095/PSN_Alert/actions/workflows/411251017/dispatches
+```
+
+**Headers**
+
+```
+Authorization: Bearer <PAT>
+Accept: application/vnd.github+json
+Content-Type: application/json
+X-GitHub-Api-Version: 2022-11-28
+```
+
+**Body**
+
+```json
+{"ref":"refs/heads/main"}
+```
+
+**Success is `204 No Content`.** GitHub's own documentation says `200`; the
+live endpoint returns `204`, which is what any health check must expect.
+
+#### Step 1 — create a token (once)
+
+1. GitHub → Settings → Developer settings → Personal access tokens →
+   **Fine-grained tokens** → Generate new token
+2. **Repository access → Only select repositories → PSN_Alert.** A
+   fine-grained token must name the repository even though it is public, or
+   every call returns `404`.
+3. **Permissions → Repository permissions → Actions → Read and write.**
+4. Pick an expiry you will remember. **When it expires the schedule stops
+   silently** — the only sign is a `401` in the cron history.
+
+That is the entire scope. It cannot read or write code, cannot see secrets,
+and does nothing outside this one repository.
+
+#### Step 2 — create the job (once)
+
+[cron-job.org](https://www.cron-job.org) is free, accepts arbitrary custom
+headers and POST bodies, and allows up to 60 executions/hour — this needs 12.
+
+| Field | Value |
+|---|---|
+| URL | `https://api.github.com/repos/Tyson095/PSN_Alert/actions/workflows/411251017/dispatches` |
+| Method | `POST` |
+| Schedule | `*/5 * * * *` |
+| Body | `{"ref":"refs/heads/main"}` |
+| Header `Authorization` | `Bearer <PAT>` |
+| Header `Accept` | `application/vnd.github+json` |
+| Header `Content-Type` | `application/json` |
+
+Press **Test run** — it must return `204`. Then open the **Actions** tab and
+confirm a run started.
+
+#### Step 3 — confirm it is really on time
+
+cron-job.org keeps two days of execution history with response codes:
+
+| Code | Meaning |
+|---|---|
+| `204` every 5 minutes | healthy |
+| `401` | token expired, or wrong scope |
+| `404` | token cannot see the repo (repository not selected) |
+| `403` | token lacks Actions: write |
+
+The second check is the run list itself: **Actions → PSN Gift Card Monitor**
+should show a dispatch roughly every five minutes.
+
+### What a cycle costs
+
+- **Retailers:** one request per distinct URL — 7 requests across 3 hosts, so
+  **12 requests/hour per host**, with a 2-second pause between real requests.
+  Entries that share a page (Rooter's five variants, StanShop's four) are
+  fetched once, not once each.
+- **GitHub:** the repository is public, so Actions minutes are unlimited. A
+  cycle takes about 30 seconds, comfortably inside a 5-minute window.
+- Nothing here bypasses CAPTCHA, authentication or anti-bot protection.
+
+### Fallback
+
+The `schedule` triggers stay. If the external job dies, monitoring degrades to
+GitHub's slow cadence instead of stopping outright. Duplicate alerts are
+impossible either way: a restock is only recorded when the previous known
+status was `OUT_OF_STOCK`.
+
+Because `report_due` is evaluated on **every** cycle, the daily report also
+lands within five minutes of 09:00 IST instead of whenever GitHub's scheduler
+gets around to it.
 
 ---
 

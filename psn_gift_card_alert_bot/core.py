@@ -648,6 +648,19 @@ def fetch_html(url: str, timeout: float = 30.0, session: requests.Session | None
     return response.text
 
 
+def fetch_failed_observation(exc: BaseException) -> dict[str, Any]:
+    """Observation for a product whose page could not be read.
+
+    Defined separately from :func:`observe` so callers that cache pages -- and
+    may therefore replay an earlier failure -- report it identically to a live
+    attempt, instead of drifting into a second copy of the same shape.
+    """
+    return {
+        "ok": False, "status": None, "price": None, "discount": "",
+        "cashback": "", "error": f"{type(exc).__name__}: {exc}"[:400], "note": "",
+    }
+
+
 def observe(product: dict[str, Any], html: str | None = None,
             session: requests.Session | None = None) -> dict[str, Any]:
     """Return an observation for a product. Never raises."""
@@ -673,10 +686,7 @@ def observe(product: dict[str, Any], html: str | None = None,
         return result
     except Exception as exc:  # noqa: BLE001 - one product must never kill the run
         log.warning("Fetch/parse failed for %s: %s", product.get("id"), type(exc).__name__)
-        return {
-            "ok": False, "status": None, "price": None, "discount": "",
-            "cashback": "", "error": f"{type(exc).__name__}: {exc}"[:400], "note": "",
-        }
+        return fetch_failed_observation(exc)
 
 
 # --------------------------------------------------------------------------- #

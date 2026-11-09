@@ -96,6 +96,38 @@ def report_due(state: dict, now: datetime, report_hour: int) -> bool:
     return state.get("last_daily_report_date") != now.strftime("%Y-%m-%d")
 
 
+def observe_cached(product: dict, cache: dict[str, str | BaseException]) -> tuple[dict, bool]:
+    """Observe a product, fetching its URL at most once per cycle.
+
+    Returns ``(observation, fetched)``. ``fetched`` is True only when this call
+    issued a network request, so the caller can pace requests without sleeping
+    between products that reused an earlier fetch.
+
+    Failures are cached as well as pages: a host which is already down should
+    be attempted once per cycle rather than once per product. That distinction
+    matters because a hanging host costs a full timeout per attempt, so
+    retrying per product would multiply a stalled cycle by the number of
+    products sharing that URL.
+    """
+    url = str(product.get("url") or "")
+    if not url:
+        return core.observe(product), False
+
+    if url in cache:
+        fetched = False
+    else:
+        try:
+            cache[url] = core.fetch_html(url)
+        except Exception as exc:  # noqa: BLE001 - reported, never raised
+            cache[url] = exc
+        fetched = True
+
+    cached = cache[url]
+    if isinstance(cached, BaseException):
+        return core.fetch_failed_observation(cached), fetched
+    return core.observe(product, html=cached), fetched
+
+
 def main(argv: list[str] | None = None) -> int:
     setup_logging()
     args = parse_args(argv)
@@ -175,9 +207,16 @@ def main(argv: list[str] | None = None) -> int:
     all_alerts: list[core.Alert] = []
     failures = 0
 
+    # Several entries deliberately share one URL: Rooter's five variants live
+    # on a single page, as do StanShop's four. Fetching per product would hit
+    # the same host repeatedly for no new information, so each URL is fetched
+    # at most once per cycle. With checks running every few minutes this keeps
+    # our per-host request rate down to one request per interval.
+    html_cache: dict[str, str | BaseException] = {}
+
     for index, product in enumerate(active, start=1):
         pid = str(product.get("id") or f"product-{index}")
-        observation = core.observe(product)
+        observation, fetched = observe_cached(product, html_cache)
         evaluation = core.evaluate(product, entries.get(pid), observation, now_text)
         entries[pid] = evaluation.entry
 
@@ -204,7 +243,9 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     log.warning("Alert generated but no chat is linked yet; not sent")
 
-        if delay and index < len(active):
+        # Pace only real network requests. Products that reused a cached page
+        # cost no bandwidth, so sleeping after them would just slow the cycle.
+        if fetched and delay and index < len(active):
             time.sleep(delay)
 
     # ------------------------------------------------------------------ #
