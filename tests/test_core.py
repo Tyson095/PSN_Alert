@@ -738,6 +738,78 @@ class TestJsonLdExtractor:
         assert "jsonld_offers" in core.EXTRACTORS
         assert core.EXTRACTORS["jsonld_offers"] is core.extract_jsonld
 
+    def test_graph_document_shape_is_read(self):
+        """WordPress SEO plugins nest Product inside "@graph".
+
+        Reading only the top level finds no Product at all and reports
+        "no offers", which on e2z would mean every product read UNKNOWN.
+        """
+        page = (
+            '<script type="application/ld+json">{'
+            '"@context":"https://schema.org",'
+            '"@graph":['
+            '{"@type":"BreadcrumbList"},'
+            '{"@type":"Organization","name":"Shop"},'
+            '{"@type":"Product","name":"PSN 2000",'
+            '"offers":{"@type":"Offer","price":2000,'
+            '"availability":"https://schema.org/InStock"}},'
+            '{"@type":"WebSite"}'
+            ']}</script>'
+        )
+        result = self._run(page, 2000)
+        assert result["status"] == core.IN_STOCK
+        assert result["price"] == 2000.0
+
+    def test_graph_shape_out_of_stock(self):
+        page = (
+            '<script type="application/ld+json">{'
+            '"@context":"https://schema.org",'
+            '"@graph":[{"@type":"Product",'
+            '"offers":{"@type":"Offer","price":1000,'
+            '"availability":"https://schema.org/OutOfStock"}}]}</script>'
+        )
+        assert self._run(page, 1000)["status"] == core.OUT_OF_STOCK
+
+    def test_graph_sibling_offers_are_not_mistaken_for_this_product(self):
+        """A graph containing two Products must not cross-attribute."""
+        page = (
+            '<script type="application/ld+json">{'
+            '"@context":"https://schema.org",'
+            '"@graph":['
+            '{"@type":"Product","offers":{"@type":"Offer","price":1000,'
+            '"availability":"https://schema.org/InStock"}},'
+            '{"@type":"Product","offers":{"@type":"Offer","price":5000,'
+            '"availability":"https://schema.org/OutOfStock"}}'
+            ']}</script>'
+        )
+        assert self._run(page, 1000)["status"] == core.IN_STOCK
+        assert self._run(page, 5000)["status"] == core.OUT_OF_STOCK
+
+    def test_deeply_nested_graph_still_found(self):
+        page = (
+            '<script type="application/ld+json">{'
+            '"@context":"https://schema.org",'
+            '"@graph":{"wrapper":{"deeper":[{"@type":"Product",'
+            '"offers":{"@type":"Offer","price":3000,'
+            '"availability":"https://schema.org/InStock"}}]}}}</script>'
+        )
+        assert self._run(page, 3000)["status"] == core.IN_STOCK
+
+    def test_collect_products_does_not_recurse_into_offers_as_products(self):
+        """Offer nodes carry @type Offer, not Product -- no double count."""
+        page = (
+            '<script type="application/ld+json">{'
+            '"@type":"Product","offers":['
+            '{"@type":"Offer","price":1000,'
+            '"availability":"https://schema.org/InStock"},'
+            '{"@type":"Offer","price":2000,'
+            '"availability":"https://schema.org/OutOfStock"}]}</script>'
+        )
+        offers = core.iter_jsonld_offers(
+            BeautifulSoup(page, "html.parser")
+        )
+        assert len(offers) == 2
+
 
 # =========================================================================== #
 # 7. observe() never raises

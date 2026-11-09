@@ -489,14 +489,32 @@ def extract_html(html: str, product: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def collect_products(node: Any, out: list[dict[str, Any]]) -> None:
+    """Gather every schema.org Product node from a parsed JSON-LD tree.
+
+    Two shapes are in the wild: a Product sitting at the top level, and the
+    ``@graph`` shape emitted by WordPress SEO plugins where the Product is a
+    sibling of BreadcrumbList/Organization/WebSite nodes. Only reading the
+    top level silently finds nothing on the second kind.
+    """
+    if isinstance(node, dict):
+        if node.get("@type") == "Product":
+            out.append(node)
+        for value in node.values():
+            collect_products(value, out)
+    elif isinstance(node, list):
+        for item in node:
+            collect_products(item, out)
+
+
 def iter_jsonld_offers(soup: BeautifulSoup) -> list[dict[str, Any]]:
     """Collect every schema.org Offer published in the page's JSON-LD.
 
     Sites publish this specifically so machines can read price and
     availability, and unlike the visible card text the vocabulary is fixed
     (``schema.org/InStock`` / ``schema.org/OutOfStock``). Handles the three
-    shapes seen in the wild: a bare offer, a list, and an AggregateOffer
-    wrapping a nested list.
+    offer shapes seen in the wild: a bare offer, a list, and an AggregateOffer
+    wrapping a nested list -- and the ``@graph`` document shape above.
     """
     offers: list[dict[str, Any]] = []
     for block in soup.find_all("script", type="application/ld+json"):
@@ -508,10 +526,11 @@ def iter_jsonld_offers(soup: BeautifulSoup) -> list[dict[str, Any]]:
             data = json.loads(raw)
         except (ValueError, TypeError):
             continue
-        items = data if isinstance(data, list) else [data]
-        for item in items:
-            if not isinstance(item, dict) or item.get("@type") != "Product":
-                continue
+
+        products: list[dict[str, Any]] = []
+        collect_products(data, products)
+
+        for item in products:
             nested = item.get("offers")
             if isinstance(nested, dict):
                 inner = nested.get("offers")

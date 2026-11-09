@@ -87,24 +87,27 @@ products:
   # robots.txt: "User-agent: * / Allow: /". No bypass of any kind is used --
   # a normal request is enough, so no circumvention is involved.
   #
-  # This is a WooCommerce store. Its real availability signal is the CSS class
-  # on <p class="stock ...">, not the visible text: an in-stock card may say
-  # only "Delivery By: 09/11/2026 - 17/11/2026", which no text pattern would
-  # match. in_stock_classes/out_of_stock_classes read that class directly;
-  # the text patterns remain as a fallback if the markup ever changes.
+  # Availability comes from the page's schema.org JSON-LD, which is present in
+  # both states and reports schema.org/InStock | OutOfStock.
+  #
+  # WHY NOT <p class="stock ...">: this WooCommerce theme only renders that
+  # element while the product is OUT of stock. On an in-stock page it is
+  # absent entirely. A selector on it therefore returns "matched nothing"
+  # precisely when the product comes back -- reading a real restock as
+  # UNKNOWN and never firing the alert. Found on 2026-11-09 when 2000/4000
+  # came in stock and the bot reported UNKNOWN instead.
+  # The class-based and text-pattern fallbacks are deliberately gone: they
+  # shared the same blind spot.
+  #
+  # The JSON-LD is wrapped in a "@graph" node (WordPress SEO plugin), so the
+  # extractor walks the whole tree rather than only the top level.
   #
   # First run records a baseline and alerts nothing, by design.
   - id: e2z-psn-1000
     retailer: e2z Store
     denomination: 1000
     url: https://e2zstore.com/product/rs-1000-playstation-network-wallet-top-up/
-    extractor: html_text
-    availability_selector: p.stock
-    price_selector: p.price .woocommerce-Price-amount
-    in_stock_classes: ["in-stock"]
-    out_of_stock_classes: ["out-of-stock"]
-    in_stock_patterns: ["order it now", "add to cart", "buy now"]
-    out_of_stock_patterns: ["out of stock", "currently unavailable", "sold out"]
+    extractor: jsonld_offers
     enabled: true
     verification: verified-2026-11-09
 
@@ -112,13 +115,7 @@ products:
     retailer: e2z Store
     denomination: 2000
     url: https://e2zstore.com/product/rs-2000-playstation-network-wallet-top-up/
-    extractor: html_text
-    availability_selector: p.stock
-    price_selector: p.price .woocommerce-Price-amount
-    in_stock_classes: ["in-stock"]
-    out_of_stock_classes: ["out-of-stock"]
-    in_stock_patterns: ["order it now", "add to cart", "buy now"]
-    out_of_stock_patterns: ["out of stock", "currently unavailable", "sold out"]
+    extractor: jsonld_offers
     enabled: true
     verification: verified-2026-11-09
 
@@ -126,13 +123,7 @@ products:
     retailer: e2z Store
     denomination: 3000
     url: https://e2zstore.com/product/rs-3000-playstation-network-wallet-top-up/
-    extractor: html_text
-    availability_selector: p.stock
-    price_selector: p.price .woocommerce-Price-amount
-    in_stock_classes: ["in-stock"]
-    out_of_stock_classes: ["out-of-stock"]
-    in_stock_patterns: ["order it now", "add to cart", "buy now"]
-    out_of_stock_patterns: ["out of stock", "currently unavailable", "sold out"]
+    extractor: jsonld_offers
     enabled: true
     verification: verified-2026-11-09
 
@@ -140,13 +131,7 @@ products:
     retailer: e2z Store
     denomination: 4000
     url: https://e2zstore.com/product/rs-4000-playstation-network-wallet-top-up/
-    extractor: html_text
-    availability_selector: p.stock
-    price_selector: p.price .woocommerce-Price-amount
-    in_stock_classes: ["in-stock"]
-    out_of_stock_classes: ["out-of-stock"]
-    in_stock_patterns: ["order it now", "add to cart", "buy now"]
-    out_of_stock_patterns: ["out of stock", "currently unavailable", "sold out"]
+    extractor: jsonld_offers
     enabled: true
     verification: verified-2026-11-09
 
@@ -154,13 +139,7 @@ products:
     retailer: e2z Store
     denomination: 5000
     url: https://e2zstore.com/product/rs-5000-playstation-store-gift-card-wallet-top-up/
-    extractor: html_text
-    availability_selector: p.stock
-    price_selector: p.price .woocommerce-Price-amount
-    in_stock_classes: ["in-stock"]
-    out_of_stock_classes: ["out-of-stock"]
-    in_stock_patterns: ["order it now", "add to cart", "buy now"]
-    out_of_stock_patterns: ["out of stock", "currently unavailable", "sold out"]
+    extractor: jsonld_offers
     enabled: true
     verification: verified-2026-11-09
 
@@ -171,13 +150,7 @@ products:
     retailer: e2z Store
     denomination: 7000
     url: https://e2zstore.com/product/rs-7000-sony-playstation-store-gift-card-wallet-top-up/
-    extractor: html_text
-    availability_selector: p.stock
-    price_selector: p.price .woocommerce-Price-amount
-    in_stock_classes: ["in-stock"]
-    out_of_stock_classes: ["out-of-stock"]
-    in_stock_patterns: ["order it now", "add to cart", "buy now"]
-    out_of_stock_patterns: ["out of stock", "currently unavailable", "sold out"]
+    extractor: jsonld_offers
     enabled: false
     verification: verified-2026-11-09
     notes: "Reachable and readable; disabled only because Rs.7000 is outside the configured denomination set."
