@@ -94,7 +94,7 @@
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
       "last_changed_at": "2026-11-09T22:21:55+05:30",
-      "last_error": "",
+      "last_error": "HTTPError: 520 Server Error: <none> for url: https://e2zstore.com/product/rs-5000-playstation-store-gift-card-wallet-top-up/",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 5000.0,
