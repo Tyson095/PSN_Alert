@@ -457,22 +457,10 @@ products:
     notes: "No server-rendered public listing confirmed. Needs a verified URL."
 
 # ─────────────────────────────────────────────────────────────────────────────
-# OTHER INDIAN RETAILERS IDENTIFIED BUT NOT YET VERIFIED
+# ADDING A NEW RETAILER SAFELY
 # ─────────────────────────────────────────────────────────────────────────────
-# These are legitimate Indian retailers that have carried PlayStation wallet
-# codes in the past. None was confirmed to serve stock/price data in plain
-# HTML during verification, so no entry has been created for them. Do not add
-# and enable one without checking the raw HTML first.
+# Do not add and enable an entry without checking the raw HTML first.
 #
-#   Croma       croma.com               - verify whether PSN codes are listed.
-#   Vijay Sales vijaysales.com          - verify whether PSN codes are listed.
-#   Snapdeal    snapdeal.com            - checked 2026-11-08: searching
-#                                         "playstation gift card" returned
-#                                         unrelated items (playing cards,
-#                                         party supplies). No genuine PSN
-#                                         listings found.
-#
-# Adding a new retailer safely:
 #   1. Open the exact product page and use "View Page Source".
 #   2. Confirm the price and stock wording appear in that raw source.
 #   3. If it does, the page is client-rendered - it cannot be monitored here

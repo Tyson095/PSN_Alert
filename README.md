@@ -298,8 +298,6 @@ Safety rules that are enforced by the code, not by convention:
 | **Amazon India** | ❌ Disabled | Product/search pages return HTTP **503** to non-browser clients (bot protection). Needs the official **Creators API** (PA-API 5 is deprecated) plus Associates credentials. Do not attempt to bypass the blocking. |
 | **Games The Shop** | ❌ Disabled | Product data is fetched client-side from `/api/`, which `robots.txt` explicitly `Disallow`s. Respect it; needs an official feed/API. |
 | **Paytm** | ❌ Disabled | Search returns a generic marketing page; no server-rendered listings. |
-| **Snapdeal** | ❌ Disabled | Search returns unrelated results; no genuine PSN listings found. |
-| **Croma / Vijay Sales** | ⬜ Unverified | Left in the config as documented placeholders. |
 
 **15 entries are enabled across 3 retailers** (Rooter 5, e2z 6, StanShop 4),
 all PlayStation only.
@@ -328,13 +326,11 @@ test against the live page):
 2. **Games The Shop** — needs an official data source; its `/api/` path is
    disallowed by robots.txt.
 3. **Paytm** — needs a server-rendered or official listing URL.
-4. **Snapdeal / Croma / Vijay Sales** — candidate URLs and
-   denomination-scoped selectors have not been verified at all.
-5. For any page that lists several denominations at once, the selector must
+4. For any page that lists several denominations at once, the selector must
    be scoped to the exact denomination — otherwise "out of stock" for one
    variant can be read as stock for another.
 
-No working product URLs or selectors were invented. The 14 enabled entries
+No working product URLs or selectors were invented. The 15 enabled entries
 (Rooter, e2z Store, StanShop) were each checked against the live page before
 `enabled: true` was set.
 
