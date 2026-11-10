@@ -96,6 +96,36 @@
       "message": "🏷️ DISCOUNT / OFFER UPDATE\nRooter PSN ₹5000\nPro price ₹4,960.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
       "product_id": "rooter-psn-5000",
       "type": "DISCOUNT"
+    },
+    {
+      "at": "2026-11-10T13:26:19+05:30",
+      "message": "🔻 PRICE DROP\nRooter PSN ₹1000\n₹1,000.00 → ₹985.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
+      "product_id": "rooter-psn-1000",
+      "type": "PRICE_DROP"
+    },
+    {
+      "at": "2026-11-10T13:26:19+05:30",
+      "message": "🔻 PRICE DROP\nRooter PSN ₹2000\n₹2,000.00 → ₹1,970.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
+      "product_id": "rooter-psn-2000",
+      "type": "PRICE_DROP"
+    },
+    {
+      "at": "2026-11-10T13:26:19+05:30",
+      "message": "🔻 PRICE DROP\nRooter PSN ₹3000\n₹3,000.00 → ₹2,955.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
+      "product_id": "rooter-psn-3000",
+      "type": "PRICE_DROP"
+    },
+    {
+      "at": "2026-11-10T13:26:19+05:30",
+      "message": "🔻 PRICE DROP\nRooter PSN ₹4000\n₹4,000.00 → ₹3,940.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
+      "product_id": "rooter-psn-4000",
+      "type": "PRICE_DROP"
+    },
+    {
+      "at": "2026-11-10T13:26:19+05:30",
+      "message": "🔻 PRICE DROP\nRooter PSN ₹5000\n₹5,000.00 → ₹4,925.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
+      "product_id": "rooter-psn-5000",
+      "type": "PRICE_DROP"
     }
   ],
   "last_daily_report_date": "2026-11-10",
@@ -163,62 +193,62 @@
     "rooter-psn-1000": {
       "baseline": true,
       "cashback": "",
-      "discount": "Pro price ₹993.33",
+      "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-10T13:22:22+05:30",
+      "last_changed_at": "2026-11-10T13:26:19+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 1000.0,
-      "status": "IN_STOCK"
+      "price": 985.0,
+      "status": "OUT_OF_STOCK"
     },
     "rooter-psn-2000": {
       "baseline": true,
       "cashback": "",
-      "discount": "Pro price ₹1,986.67",
+      "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-10T13:22:22+05:30",
+      "last_changed_at": "2026-11-10T13:26:19+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 2000.0,
-      "status": "IN_STOCK"
+      "price": 1970.0,
+      "status": "OUT_OF_STOCK"
     },
     "rooter-psn-3000": {
       "baseline": true,
       "cashback": "",
-      "discount": "Pro price ₹2,980.00",
+      "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-10T13:22:22+05:30",
+      "last_changed_at": "2026-11-10T13:26:19+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 3000.0,
-      "status": "IN_STOCK"
+      "price": 2955.0,
+      "status": "OUT_OF_STOCK"
     },
     "rooter-psn-4000": {
       "baseline": true,
       "cashback": "",
-      "discount": "Pro price ₹3,973.33",
+      "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-10T13:22:22+05:30",
+      "last_changed_at": "2026-11-10T13:26:19+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 4000.0,
-      "status": "IN_STOCK"
+      "price": 3940.0,
+      "status": "OUT_OF_STOCK"
     },
     "rooter-psn-5000": {
       "baseline": true,
       "cashback": "",
-      "discount": "Pro price ₹4,960.00",
+      "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-10T13:22:22+05:30",
+      "last_changed_at": "2026-11-10T13:26:19+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 5000.0,
-      "status": "IN_STOCK"
+      "price": 4925.0,
+      "status": "OUT_OF_STOCK"
     },
     "stan-psn-1000": {
       "baseline": true,
