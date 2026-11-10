@@ -172,7 +172,7 @@
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
       "last_changed_at": "2026-11-10T17:00:57+05:30",
-      "last_error": "HTTPError: 500 Server Error: Internal Server Error for url: https://e2zstore.com/product/rs-2000-playstation-network-wallet-top-up/",
+      "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
       "price": 2000.0,
