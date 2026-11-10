@@ -144,16 +144,17 @@ products:
     verification: verified-2026-11-09
 
   # e2z also lists a Rs.7000 PSN card (verified reachable, currently out of
-  # stock). It falls outside the configured denomination set, so it is left
-  # disabled rather than silently widening what gets monitored.
+  # stock). It sat outside the originally requested 1000-5000 range and was
+  # left disabled rather than silently widening what gets monitored; enabled
+  # on request, since it is verified and reads through the same extractor.
   - id: e2z-psn-7000
     retailer: e2z Store
     denomination: 7000
     url: https://e2zstore.com/product/rs-7000-sony-playstation-store-gift-card-wallet-top-up/
     extractor: jsonld_offers
-    enabled: false
+    enabled: true
     verification: verified-2026-11-09
-    notes: "Reachable and readable; disabled only because Rs.7000 is outside the configured denomination set."
+    notes: "Verified reachable and readable; Rs.7000 is outside the originally requested 1000-5000 range."
 
   # ── StanShop ──────────────────────────────────────────────────────────────
   # VERIFIED 2026-11-09. Two hostnames exist; only one is alive:
