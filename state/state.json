@@ -12,6 +12,30 @@
       "message": "🟢 BACK IN STOCK\ne2z Store PSN ₹1000\nLink: https://e2zstore.com/product/rs-1000-playstation-network-wallet-top-up/\nPrice: ₹1,000.00",
       "product_id": "e2z-psn-1000",
       "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-10T11:00:58+05:30",
+      "message": "🟢 BACK IN STOCK\nStanShop PSN ₹1000\nLink: https://www.stanshop.co/playstation-psn-gift-card-in-india\nPrice: ₹1,000.00",
+      "product_id": "stan-psn-1000",
+      "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-10T11:00:58+05:30",
+      "message": "🟢 BACK IN STOCK\nStanShop PSN ₹2000\nLink: https://www.stanshop.co/playstation-psn-gift-card-in-india\nPrice: ₹2,000.00",
+      "product_id": "stan-psn-2000",
+      "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-10T11:00:58+05:30",
+      "message": "🟢 BACK IN STOCK\nStanShop PSN ₹3000\nLink: https://www.stanshop.co/playstation-psn-gift-card-in-india\nPrice: ₹3,000.00",
+      "product_id": "stan-psn-3000",
+      "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-10T11:00:58+05:30",
+      "message": "🟢 BACK IN STOCK\nStanShop PSN ₹4000\nLink: https://www.stanshop.co/playstation-psn-gift-card-in-india\nPrice: ₹4,000.00",
+      "product_id": "stan-psn-4000",
+      "type": "RESTOCK"
     }
   ],
   "last_daily_report_date": "2026-11-10",
@@ -141,48 +165,48 @@
       "cashback": "5% cashback",
       "discount": "Get Upto 50 Coins",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-09T22:21:55+05:30",
+      "last_changed_at": "2026-11-10T11:00:58+05:30",
       "last_error": "",
-      "last_known_status": "OUT_OF_STOCK",
+      "last_known_status": "IN_STOCK",
       "note": "",
       "price": 1000.0,
-      "status": "OUT_OF_STOCK"
+      "status": "IN_STOCK"
     },
     "stan-psn-2000": {
       "baseline": true,
       "cashback": "5% cashback",
       "discount": "Get Upto 100 Coins",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-09T22:21:55+05:30",
+      "last_changed_at": "2026-11-10T11:00:58+05:30",
       "last_error": "",
-      "last_known_status": "OUT_OF_STOCK",
+      "last_known_status": "IN_STOCK",
       "note": "",
       "price": 2000.0,
-      "status": "OUT_OF_STOCK"
+      "status": "IN_STOCK"
     },
     "stan-psn-3000": {
       "baseline": true,
       "cashback": "5% cashback",
       "discount": "Get Upto 150 Coins",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-09T22:21:55+05:30",
+      "last_changed_at": "2026-11-10T11:00:58+05:30",
       "last_error": "",
-      "last_known_status": "OUT_OF_STOCK",
+      "last_known_status": "IN_STOCK",
       "note": "",
       "price": 3000.0,
-      "status": "OUT_OF_STOCK"
+      "status": "IN_STOCK"
     },
     "stan-psn-4000": {
       "baseline": true,
       "cashback": "5% cashback",
       "discount": "Get Upto 200 Coins",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-09T22:21:55+05:30",
+      "last_changed_at": "2026-11-10T11:00:58+05:30",
       "last_error": "",
-      "last_known_status": "OUT_OF_STOCK",
+      "last_known_status": "IN_STOCK",
       "note": "",
       "price": 4000.0,
-      "status": "OUT_OF_STOCK"
+      "status": "IN_STOCK"
     }
   },
   "version": 1
