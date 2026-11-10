@@ -183,12 +183,12 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-10T20:39:17+05:30",
+      "last_changed_at": "2026-11-10T21:18:21+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 3000.0,
-      "status": "IN_STOCK"
+      "status": "OUT_OF_STOCK"
     },
     "e2z-psn-4000": {
       "baseline": true,
