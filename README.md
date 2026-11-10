@@ -293,15 +293,15 @@ Safety rules that are enforced by the code, not by convention:
 | Retailer | Status | Notes |
 | --- | --- | --- |
 | **Rooter** (`shop.rooter.gg`) | ✅ **Enabled, verified** | Server-rendered Next.js page; `productData.baseVariations` carries all five variants with per-variant `outOfStock`, `sellPrice`, `proSellPrice` and cashback. `robots.txt` allows crawling. 5 entries enabled. |
-| **e2z Store** (`e2zstore.com`) | ✅ **Enabled, verified** | WooCommerce. Previously sat behind a Cloudflare managed challenge and returned 403; it now answers a plain GET with full HTML and no challenge header, so **no bypass is needed or used**. `robots.txt` says `Allow: /`. Stock lives in the CSS class on `<p class="stock ...">`, not the text. 5 entries enabled (+1 disabled: Rs.7000 is outside the configured denomination set). |
-| **StanShop** (`www.stanshop.co`) | ✅ **Enabled, verified** | Next.js App Router, no WooCommerce markup. Publishes per-denomination schema.org JSON-LD offers with a fixed availability vocabulary. `robots.txt` says `Allow: /`. 4 entries enabled (+1 disabled: **no Rs.5000 card exists**). Note `store.getstan.app` returns HTTP 402 `DEPLOYMENT_DISABLED` and is dead. |
+| **e2z Store** (`e2zstore.com`) | ✅ **Enabled, verified** | WooCommerce. Previously sat behind a Cloudflare managed challenge and returned 403; it now answers a plain GET with full HTML and no challenge header, so **no bypass is needed or used**. `robots.txt` says `Allow: /`. Stock lives in the CSS class on `<p class="stock ...">`, not the text. 6 entries enabled (Rs.1000–Rs.7000). |
+| **StanShop** (`www.stanshop.co`) | ✅ **Enabled, verified** | Next.js App Router, no WooCommerce markup. Publishes per-denomination schema.org JSON-LD offers with a fixed availability vocabulary. `robots.txt` says `Allow: /`. 4 entries enabled (Rs.1000–Rs.4000); StanShop publishes no Rs.5000 card, so no entry exists for it. Note `store.getstan.app` returns HTTP 402 `DEPLOYMENT_DISABLED` and is dead. |
 | **Amazon India** | ❌ Disabled | Product/search pages return HTTP **503** to non-browser clients (bot protection). Needs the official **Creators API** (PA-API 5 is deprecated) plus Associates credentials. Do not attempt to bypass the blocking. |
 | **Games The Shop** | ❌ Disabled | Product data is fetched client-side from `/api/`, which `robots.txt` explicitly `Disallow`s. Respect it; needs an official feed/API. |
 | **Paytm** | ❌ Disabled | Search returns a generic marketing page; no server-rendered listings. |
 | **Snapdeal** | ❌ Disabled | Search returns unrelated results; no genuine PSN listings found. |
-| **Flipkart / Croma / Vijay Sales** | ⬜ Unverified | Left in the config as documented placeholders. |
+| **Croma / Vijay Sales** | ⬜ Unverified | Left in the config as documented placeholders. |
 
-**14 entries are enabled across 3 retailers** (Rooter 5, e2z 5, StanShop 4),
+**15 entries are enabled across 3 retailers** (Rooter 5, e2z 6, StanShop 4),
 all PlayStation only.
 
 ### Why Cloudflare bypass tools are not used
@@ -328,7 +328,7 @@ test against the live page):
 2. **Games The Shop** — needs an official data source; its `/api/` path is
    disallowed by robots.txt.
 3. **Paytm** — needs a server-rendered or official listing URL.
-4. **Snapdeal / Flipkart / Croma / Vijay Sales** — candidate URLs and
+4. **Snapdeal / Croma / Vijay Sales** — candidate URLs and
    denomination-scoped selectors have not been verified at all.
 5. For any page that lists several denominations at once, the selector must
    be scoped to the exact denomination — otherwise "out of stock" for one

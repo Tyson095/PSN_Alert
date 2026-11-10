@@ -204,17 +204,6 @@ products:
     enabled: true
     verification: verified-2026-11-09
 
-  # Not sold by StanShop. Kept so the gap is documented rather than silent;
-  # jsonld_offers reports UNKNOWN for it, never OUT_OF_STOCK.
-  - id: stan-psn-5000
-    retailer: StanShop
-    denomination: 5000
-    url: https://www.stanshop.co/playstation-psn-gift-card-in-india
-    extractor: jsonld_offers
-    enabled: false
-    verification: verified-2026-11-09
-    notes: "StanShop publishes offers for 1000/2000/3000/4000 only. No Rs.5000 card exists."
-
   # ── Games The Shop ────────────────────────────────────────────────────────
   # DISABLED - data is not in the HTML.
   # The site is a Next.js app whose product page returns only a shell; the
@@ -475,8 +464,6 @@ products:
 # HTML during verification, so no entry has been created for them. Do not add
 # and enable one without checking the raw HTML first.
 #
-#   Flipkart    flipkart.com            - heavy client-side rendering; usually
-#                                         needs an account to see offers.
 #   Croma       croma.com               - verify whether PSN codes are listed.
 #   Vijay Sales vijaysales.com          - verify whether PSN codes are listed.
 #   Snapdeal    snapdeal.com            - checked 2026-11-08: searching
