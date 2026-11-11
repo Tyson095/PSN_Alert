@@ -28,7 +28,7 @@ Detection logic is shared by both entry points in
 | `psn_gift_card_alert_bot/bot.py` | Optional local long-running process (pairing, `/status`) |
 | `psn_gift_card_alert_bot/config/products.yaml` | Product list; `enabled: true/false` |
 | `state/state.json` | Persisted observations and last report date (committed; contains no chat id) |
-| `tests/test_core.py` | 172 tests for state, transitions, dedup, extractors (incl. GYFTR's JSON feed), report totals, message splitting, chat-id isolation |
+| `tests/test_core.py` | 177 tests for state, transitions, dedup, extractors (incl. GYFTR's JSON feed and the enable-candidate signal), report totals, message splitting, chat-id isolation |
 | `requirements.txt` | Runtime dependencies (canonical) |
 | `requirements-dev.txt` | Test dependencies (`pytest`) |
 
@@ -314,7 +314,7 @@ Safety rules that are enforced by the code, not by convention:
 | **Amazon India** | ❌ Disabled | Product/search pages return HTTP **503** to non-browser clients (bot protection). Needs the official **Creators API** (PA-API 5 is deprecated) plus Associates credentials. Do not attempt to bypass the blocking. |
 | **Games The Shop** | ❌ Disabled | Product data is fetched client-side from `/api/`, which `robots.txt` explicitly `Disallow`s. Respect it; needs an official feed/API. |
 | **Paytm** | ❌ Disabled | Search returns a generic marketing page; no server-rendered listings. |
-| **GYFTR** (`www.gyftr.com`) | ⏳ **Disabled, data path verified** | The PlayStation brand page is live (brand id 753, published), but its HTML is an empty Next.js shell: denominations, prices and a per-product `stock_left` count come from the site's own unauthenticated JSON feed (`api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation`), which answers a plain GET with the `Origin`/`Referer` its own JavaScript sends. Neither host's `robots.txt` restricts it; no cookie, credential or challenge is involved. The feed works (other brands return real stock counts) but currently returns **zero products** for PlayStation, so no denomination can be verified — 5 entries configured (Rs.1000–Rs.5000, denominations unverified) and disabled. |
+| **GYFTR** (`www.gyftr.com`) | ⏳ **Disabled, data path verified** | The PlayStation brand page is live (brand id 753, published), but its HTML is an empty Next.js shell: denominations, prices and a per-product `stock_left` count come from the site's own unauthenticated JSON feed (`api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation`), which answers a plain GET with the `Origin`/`Referer` its own JavaScript sends. Neither host's `robots.txt` restricts it; no cookie, credential or challenge is involved. The feed works (other brands return real stock counts) but currently returns **zero products** for PlayStation — and the site's own search returns "No Brands Found" — so no denomination can be verified. 5 entries configured (Rs.1000–Rs.5000, denominations unverified) and disabled; **the runner annotates every run once the feed lists products again**, which is the cue to verify and enable. |
 
 **15 entries are enabled across 3 retailers** (Rooter 5, e2z 6, StanShop 4),
 all PlayStation only. GYFTR adds 5 configured entries that stay disabled
@@ -345,11 +345,15 @@ test against the live page):
    disallowed by robots.txt.
 3. **Paytm** — needs a server-rendered or official listing URL.
 4. **GYFTR** — the feed and data path are verified, but the brand publishes
-   no products at all right now. Before enabling: run
-   `python github_runner.py --dry-run`, confirm each entry reads a real
-   `IN_STOCK`/`OUT_OF_STOCK` (not `UNKNOWN`), and delete any denomination
-   GYFTR does not actually list — an entry for a card GYFTR never sells
-   would sit at `UNKNOWN` forever.
+   no products at all right now (its own search returns "No Brands Found").
+   The runner re-checks the disabled entries every cycle and will annotate
+   each run with
+   `gyftr-psn-1000: disabled entry now reads IN_STOCK -- verify ...`
+   (or `OUT_OF_STOCK`) the moment the feed lists products again — that
+   annotation is the cue to run `python github_runner.py --dry-run`,
+   confirm each entry reads a real status (not `UNKNOWN`), delete any
+   denomination GYFTR does not actually list, and set `enabled: true`.
+   An entry for a card GYFTR never sells would sit at `UNKNOWN` forever.
 5. For any page that lists several denominations at once, the selector must
    be scoped to the exact denomination — otherwise "out of stock" for one
    variant can be read as stock for another.
@@ -366,6 +370,9 @@ verify against.
 
 - One request per product per cycle, with a configurable
   `REQUEST_DELAY_SECONDS` (default 2s) between requests — about 48 cycles/day.
+  One extra request per cycle re-checks disabled entries that still have a
+  URL (GYFTR's five share a single feed URL), so the probe costs one
+  request, not five.
 - No CAPTCHA solving, no authentication bypass, no anti-bot evasion. If a
   retailer blocks the bot or returns 429/403, the correct response is to slow
   down or disable that entry, not to work around it.
@@ -384,7 +391,9 @@ Covers state persistence, stock transitions (including
 `OUT → UNKNOWN → IN`), price drops, duplicate suppression, the four extractors
 (`rooter_rsc`, `html_text`, `jsonld_offers`, `gyftr_api`), class-based
 availability,
-safety rules (unknown never counts as in/out of stock),
+safety rules (unknown never counts as in/out of stock), the enable-candidate
+re-check (disabled entries with a URL warn the run once they read a real
+status),
 report scheduling, money parsing and token scrubbing.
 
 ---

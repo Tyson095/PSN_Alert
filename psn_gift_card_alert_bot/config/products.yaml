@@ -492,6 +492,11 @@ products:
   # confirm which denominations GYFTR actually lists and delete the rest:
   # an entry for a denomination GYFTR never sells would sit at UNKNOWN
   # forever, which the header of this file forbids.
+  #
+  # You do not have to watch the feed yourself: every runner cycle re-checks
+  # these disabled entries (one shared request) and annotates the run with
+  #   "gyftr-psn-1000: disabled entry now reads IN_STOCK -- ..."
+  # as soon as the feed reads a real status. That annotation is the cue.
   - id: gyftr-psn-1000
     retailer: GYFTR
     denomination: 1000

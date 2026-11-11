@@ -146,6 +146,17 @@ def enabled_products(products: Iterable[dict[str, Any]]) -> list[dict[str, Any]]
     return [p for p in products if p.get("enabled")]
 
 
+def enable_candidates(products: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Disabled entries that still carry a URL and can therefore be re-checked.
+
+    These are configured-but-unverified products (see products.yaml): the
+    data path exists, but the entry was never proven readable, so it stays
+    off the monitoring loop. A URL is required -- an entry with no URL has
+    nothing to probe and no way to ever become verifiable.
+    """
+    return [p for p in products if not p.get("enabled") and p.get("url")]
+
+
 # --------------------------------------------------------------------------- #
 # Persistent state
 # --------------------------------------------------------------------------- #

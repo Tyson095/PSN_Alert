@@ -1689,3 +1689,97 @@ class TestAlertLink:
                                    observation(core.IN_STOCK, 1000.0), T1)
         assert [a.type for a in evaluation.alerts] == ["RESTOCK"]
         assert product()["url"] in evaluation.alerts[0].message
+
+
+# =========================================================================== #
+# Disabled entries that can become monitorable (GYFTR's enable signal)
+# =========================================================================== #
+class TestEnableCandidates:
+    """A disabled entry with a URL is re-checked each cycle.
+
+    When it starts reading a real stock status it has become monitorable,
+    so the run must say so (a GitHub Actions warning) instead of leaving it
+    silently disabled. An empty catalogue stays UNKNOWN and silent.
+    """
+
+    FEED = "https://api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation"
+
+    @staticmethod
+    def _products():
+        return [
+            product(id="enabled-one", enabled=True),
+            product(id="gyftr-1000", retailer="GYFTR", extractor="gyftr_api",
+                    url=TestEnableCandidates.FEED, denomination=1000,
+                    link="https://www.gyftr.com/sony-playstation", enabled=False),
+            product(id="gyftr-2000", retailer="GYFTR", extractor="gyftr_api",
+                    url=TestEnableCandidates.FEED, denomination=2000,
+                    enabled=False),
+            product(id="no-url", url="", enabled=False),
+        ]
+
+    @staticmethod
+    def _payload(products) -> str:
+        return json.dumps({"code": 200, "message": "", "data": {"products": products}})
+
+    @staticmethod
+    def _probe(payload_or_exc, monkeypatch):
+        """Run the runner's probe against a canned feed; capture warnings."""
+        import github_runner
+
+        calls: list[str] = []
+
+        def fake_fetch(url, **kwargs):
+            calls.append(url)
+            if isinstance(payload_or_exc, BaseException):
+                raise payload_or_exc
+            return payload_or_exc
+
+        monkeypatch.setattr(core, "fetch_html", fake_fetch)
+        warnings: list[str] = []
+        cache: dict = {}
+        messages = github_runner.probe_enable_candidates(
+            TestEnableCandidates._products(), cache, delay=0.0,
+            warn=warnings.append,
+        )
+        return messages, warnings, calls, cache
+
+    def test_only_disabled_entries_with_a_url_are_candidates(self):
+        ids = [p["id"] for p in core.enable_candidates(self._products())]
+        assert ids == ["gyftr-1000", "gyftr-2000"]   # not enabled, not url-less
+
+    def test_empty_feed_stays_silent_but_is_still_checked(self, monkeypatch):
+        messages, warnings, calls, cache = self._probe(
+            self._payload([]), monkeypatch)
+        assert messages == [] and warnings == []
+        # Both entries share one URL: exactly one request for the cycle.
+        assert calls == [self.FEED]
+        assert self.FEED in cache
+
+    def test_listed_in_stock_entry_warns_to_enable(self, monkeypatch):
+        messages, warnings, calls, _ = self._probe(
+            self._payload([{"product_name": "Sony Playstation Rs - 1000",
+                            "mrp": 1000, "stock_left": 7}]),
+            monkeypatch,
+        )
+        assert len(messages) == 1          # 1000 reads a status; 2000 stays UNKNOWN
+        assert "gyftr-1000" in messages[0]
+        assert core.IN_STOCK in messages[0]
+        assert warnings == messages
+        assert calls == [self.FEED]
+
+    def test_listed_out_of_stock_entry_also_warns(self, monkeypatch):
+        """A readable stockout is the cue too -- it lets restocks alert later."""
+        messages, _, _, _ = self._probe(
+            self._payload([{"product_name": "Sony Playstation Rs - 1000",
+                            "mrp": 1000, "stock_left": 0}]),
+            monkeypatch,
+        )
+        assert len(messages) == 1
+        assert core.OUT_OF_STOCK in messages[0]
+
+    def test_fetch_failure_stays_silent(self, monkeypatch):
+        """A broken feed must not crash the cycle or cry wolf."""
+        messages, warnings, _, cache = self._probe(
+            ConnectionError("boom"), monkeypatch)
+        assert messages == [] and warnings == []
+        assert isinstance(cache[self.FEED], ConnectionError)

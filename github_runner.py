@@ -128,6 +128,39 @@ def observe_cached(product: dict, cache: dict[str, str | BaseException]) -> tupl
     return core.observe(product, html=cached), fetched
 
 
+def probe_enable_candidates(products: list[dict], cache: dict[str, str | BaseException],
+                            delay: float = 0.0, warn=None) -> list[str]:
+    """Re-check disabled-but-configured entries once per cycle.
+
+    A disabled entry that now reads a real stock status (``IN_STOCK`` or
+    ``OUT_OF_STOCK``) has become monitorable, and leaving it disabled would
+    silently miss its stock transitions. Emit a GitHub Actions warning so
+    someone verifies and enables it instead.
+
+    Shares the cycle's fetch cache, so entries that point at the same URL
+    (GYFTR's five share one feed) cost at most one request. Reads only:
+    no state is written and nothing is sent. Returns the messages emitted,
+    empty when every candidate is still unreadable -- an empty catalogue
+    stays silent, because UNKNOWN is not news.
+    """
+    if warn is None:
+        warn = gh_warning
+    messages: list[str] = []
+    for product in core.enable_candidates(products):
+        observation, fetched = observe_cached(product, cache)
+        status = observation.get("status")
+        if observation.get("ok") and status in (core.IN_STOCK, core.OUT_OF_STOCK):
+            message = (f"{product.get('id')}: disabled entry now reads {status} "
+                       f"-- verify with --dry-run and set enabled: true in "
+                       f"products.yaml to monitor it")
+            messages.append(message)
+            log.warning(message)
+            warn(message)
+        if fetched and delay:
+            time.sleep(delay)
+    return messages
+
+
 def main(argv: list[str] | None = None) -> int:
     setup_logging()
     args = parse_args(argv)
@@ -234,6 +267,19 @@ def main(argv: list[str] | None = None) -> int:
         # cost no bandwidth, so sleeping after them would just slow the cycle.
         if fetched and delay and index < len(active):
             time.sleep(delay)
+
+    # ------------------------------------------------------------------ #
+    # Disabled entries that still have a URL get one re-check per cycle.
+    # When such an entry starts reading a real stock status it has become
+    # monitorable, and leaving it disabled would miss its transitions --
+    # so the run carries a warning annotation until it is enabled. An
+    # empty catalogue (UNKNOWN) is not news and stays silent.
+    # ------------------------------------------------------------------ #
+    candidates = core.enable_candidates(products)
+    if candidates:
+        log.info("Re-checking %d disabled entry(ies) that still have a URL",
+                 len(candidates))
+        probe_enable_candidates(products, html_cache, delay=delay)
 
     # ------------------------------------------------------------------ #
     # Daily availability report.
