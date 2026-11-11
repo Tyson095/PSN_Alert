@@ -321,48 +321,48 @@
       "cashback": "5% cashback",
       "discount": "Get Upto 50 Coins",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-11T11:00:53+05:30",
+      "last_changed_at": "2026-11-11T11:03:20+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 1000.0,
-      "status": "IN_STOCK"
+      "status": "OUT_OF_STOCK"
     },
     "stan-psn-2000": {
       "baseline": true,
       "cashback": "5% cashback",
       "discount": "Get Upto 100 Coins",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-11T11:00:53+05:30",
+      "last_changed_at": "2026-11-11T11:03:20+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 2000.0,
-      "status": "IN_STOCK"
+      "status": "OUT_OF_STOCK"
     },
     "stan-psn-3000": {
       "baseline": true,
       "cashback": "5% cashback",
       "discount": "Get Upto 150 Coins",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-11T11:00:53+05:30",
+      "last_changed_at": "2026-11-11T11:03:20+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 3000.0,
-      "status": "IN_STOCK"
+      "status": "OUT_OF_STOCK"
     },
     "stan-psn-4000": {
       "baseline": true,
       "cashback": "5% cashback",
       "discount": "Get Upto 200 Coins",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-11T11:00:53+05:30",
+      "last_changed_at": "2026-11-11T11:03:20+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 4000.0,
-      "status": "IN_STOCK"
+      "status": "OUT_OF_STOCK"
     }
   },
   "version": 1
