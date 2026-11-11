@@ -17,6 +17,9 @@
 #                    than wording that changes per product.
 #   jsonld_offers -> reads schema.org JSON-LD offers, for sites that publish
 #                    price and availability for machines rather than readers.
+#   gyftr_api     -> reads GYFTR's own public brand-detail JSON feed, which
+#                    publishes a per-product stock_left count. The brand page
+#                    itself is an empty shell; the feed is the only source.
 #
 # Verify an entry before enabling it:
 #   python github_runner.py --dry-run
@@ -455,6 +458,84 @@ products:
     out_of_stock_patterns: ["out of stock", "sold out"]
     enabled: false
     notes: "No server-rendered public listing confirmed. Needs a verified URL."
+
+  # ── GYFTR ──────────────────────────────────────────────────────────────────
+  # DISABLED - the PlayStation brand is live, but GYFTR currently publishes
+  # ZERO products for it, so no denomination and no stock reading can be
+  # verified. Do not enable until `python github_runner.py --dry-run` shows
+  # a real status (IN_STOCK or OUT_OF_STOCK) rather than UNKNOWN.
+  #
+  # VERIFIED 2026-11-11 (the data path, not the stock):
+  #   * Brand page https://www.gyftr.com/sony-playstation answers HTTP 200;
+  #     the site's own 487-brand list has it as id 753, published and
+  #     visible. It is the only PlayStation brand GYFTR runs.
+  #   * That page's HTML carries brand metadata but no products at all
+  #     (a Next.js shell). Denominations, prices and a per-product
+  #     `stock_left` count are served by the site's own unauthenticated
+  #     JSON endpoint, which every visitor's browser calls:
+  #       https://api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation
+  #     A plain GET with the Origin/Referer the site's own JavaScript sends
+  #     returns real data (checked: Amazon -> 6 denominations with stock
+  #     counts, e.g. stock_left 7 and 0), so the feed itself works. Neither
+  #     host's robots.txt publishes any restriction, and no cookie,
+  #     credential or challenge is involved.
+  #   * For PlayStation that same endpoint currently returns products: [].
+  #     Amazon's sold-out rows stay listed with stock_left: 0, so an empty
+  #     list means "not listed" - reported as UNKNOWN, never as
+  #     OUT_OF_STOCK, exactly like a missing JSON-LD offer.
+  #   * GYFTR's sitemap has no PlayStation product URLs, so the brand feed
+  #     is the only source; `link` keeps alerts pointing at the human page
+  #     while `url` is fetched for data.
+  #
+  # The denominations below (1000-5000) follow this repo's standard range
+  # and are UNVERIFIED - GYFTR publishes none right now. Before enabling,
+  # confirm which denominations GYFTR actually lists and delete the rest:
+  # an entry for a denomination GYFTR never sells would sit at UNKNOWN
+  # forever, which the header of this file forbids.
+  - id: gyftr-psn-1000
+    retailer: GYFTR
+    denomination: 1000
+    url: https://api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation
+    link: https://www.gyftr.com/sony-playstation
+    extractor: gyftr_api
+    enabled: false
+    notes: "Feed verified working 2026-11-11; GYFTR lists no PlayStation products yet. Verify denominations, then enable."
+
+  - id: gyftr-psn-2000
+    retailer: GYFTR
+    denomination: 2000
+    url: https://api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation
+    link: https://www.gyftr.com/sony-playstation
+    extractor: gyftr_api
+    enabled: false
+    notes: "Same as gyftr-psn-1000: feed verified, no products listed to verify against."
+
+  - id: gyftr-psn-3000
+    retailer: GYFTR
+    denomination: 3000
+    url: https://api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation
+    link: https://www.gyftr.com/sony-playstation
+    extractor: gyftr_api
+    enabled: false
+    notes: "Same as gyftr-psn-1000: feed verified, no products listed to verify against."
+
+  - id: gyftr-psn-4000
+    retailer: GYFTR
+    denomination: 4000
+    url: https://api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation
+    link: https://www.gyftr.com/sony-playstation
+    extractor: gyftr_api
+    enabled: false
+    notes: "Same as gyftr-psn-1000: feed verified, no products listed to verify against."
+
+  - id: gyftr-psn-5000
+    retailer: GYFTR
+    denomination: 5000
+    url: https://api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation
+    link: https://www.gyftr.com/sony-playstation
+    extractor: gyftr_api
+    enabled: false
+    notes: "Same as gyftr-psn-1000: feed verified, no products listed to verify against."
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ADDING A NEW RETAILER SAFELY

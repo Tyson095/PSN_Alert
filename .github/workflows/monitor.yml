@@ -64,10 +64,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # Regression gate: monitoring only runs when the full test suite passes.
+      # A failing test stops the job here, before any retailer request or
+      # Telegram message is made. Uses the existing dev dependencies
+      # (requirements-dev.txt -> pytest); no new dependencies.
+      - name: Install test dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest
+
       - name: Run one-shot monitoring cycle
         env:
           # Read from Actions secrets. Never echoed, never written to state.
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          # Destination chat. Configuration, not state: the runner reads it
+          # from here only and never writes it to state/state.json or logs.
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TIMEZONE: Asia/Kolkata
           DAILY_REPORT_HOUR: '9'
           REQUEST_DELAY_SECONDS: '2'

@@ -27,8 +27,8 @@ Detection logic is shared by both entry points in
 | `psn_gift_card_alert_bot/core.py` | Config, state, extractors, alert rules, Telegram |
 | `psn_gift_card_alert_bot/bot.py` | Optional local long-running process (pairing, `/status`) |
 | `psn_gift_card_alert_bot/config/products.yaml` | Product list; `enabled: true/false` |
-| `state/state.json` | Persisted observations, chat id, last report date (committed) |
-| `tests/test_core.py` | 110 tests for state, transitions, dedup, extractors |
+| `state/state.json` | Persisted observations and last report date (committed; contains no chat id) |
+| `tests/test_core.py` | 172 tests for state, transitions, dedup, extractors (incl. GYFTR's JSON feed), report totals, message splitting, chat-id isolation |
 | `requirements.txt` | Runtime dependencies (canonical) |
 | `requirements-dev.txt` | Test dependencies (`pytest`) |
 
@@ -40,28 +40,37 @@ Detection logic is shared by both entry points in
 
 1. Open Telegram, talk to `@BotFather`, send `/newbot`, follow the prompts.
 2. Copy the **bot token**.
-3. Open your new bot and send `/start` — this links the bot to your private
-   chat. The runner picks it up on its next cycle (it reads the pending
-   `/start` via `getUpdates` and stores only the chat id in
-   `state/state.json`).
+3. Get your **chat id** (the id of your private chat with the bot):
+   - easiest: open Telegram, talk to `@userinfobot`, and it replies with your
+     id; or
+   - local pairing: run `python -m psn_gift_card_alert_bot.bot` once and send
+     `/start` — the bot replies with these instructions (the pairing lasts
+     only for that local session).
+4. Add both values as GitHub Actions secrets (step 2 below).
 
-> **Never paste the token into a chat, an issue, or a commit.** It is read
-> only from the environment variable `TELEGRAM_BOT_TOKEN`, and every log line
-> and error message is scrubbed through `core.scrub()` before it is written.
+> **Never paste the token or the chat id into a chat, an issue, or a commit.**
+> Both are read only from environment variables (`TELEGRAM_BOT_TOKEN`,
+> `TELEGRAM_CHAT_ID`), and every log line and error message is scrubbed
+> through `core.scrub()` before it is written. The chat id is **not** stored
+> in `state/state.json` — that file holds only product observations and
+> report scheduling.
 
-### 2. Add the GitHub secret (once)
+### 2. Add the GitHub secrets (once)
 
 1. Open the repository on GitHub → **Settings** → **Secrets and variables** →
    **Actions**.
-2. Click **New repository secret**.
-3. Name: `TELEGRAM_BOT_TOKEN`
-4. Value: the token from BotFather (type it in the web form; it is not stored
-   in the repository and never appears in logs).
-5. Click **Add secret**.
+2. Click **New repository secret** twice and create:
 
-The workflow reads it as `${{ secrets.TELEGRAM_BOT_TOKEN }}` and passes it to
-the process via the environment. It is never echoed, never written to
-`state/state.json`, and never printed.
+   | Name | Value |
+   | --- | --- |
+   | `TELEGRAM_BOT_TOKEN` | the token from BotFather (type it in the web form; it is not stored in the repository and never appears in logs) |
+   | `TELEGRAM_CHAT_ID` | your private chat id (from `@userinfobot`, see step 1.3) |
+
+The workflow reads them as `${{ secrets.TELEGRAM_BOT_TOKEN }}` and
+`${{ secrets.TELEGRAM_CHAT_ID }}` and passes them to the process via the
+environment. Neither is ever echoed, ever written to `state/state.json`, and
+ever printed. If `TELEGRAM_CHAT_ID` is missing the cycle still runs, but
+alerts and reports are skipped with a warning.
 
 ### 3. Enable scheduled runs
 
@@ -211,12 +220,17 @@ py -m venv .venv
 pip install -r requirements.txt
 ```
 
-Put the token in a local `.env` (this file is gitignored and must never be
-committed):
+Put the token and (optionally) the chat id in a local `.env` (this file is
+gitignored and must never be committed):
 
 ```
 TELEGRAM_BOT_TOKEN=123456:ABC-your-token
+TELEGRAM_CHAT_ID=123456789
 ```
+
+`TELEGRAM_CHAT_ID` is optional locally: without it, `/start` pairs the bot
+for the current session only and the bot replies with instructions for
+persisting it. Neither value is ever written to `state/state.json` or logs.
 
 Then:
 
@@ -252,8 +266,9 @@ Edit `psn_gift_card_alert_bot/config/products.yaml`:
 | --- | --- |
 | `id` | Stable unique id (state key — do not change it later) |
 | `retailer` / `denomination` | Labels used in alerts and reports |
-| `url` | Exact product/variant URL |
-| `extractor` | `rooter_rsc`, `html_text` or `jsonld_offers` |
+| `url` | Exact product/variant URL (for `gyftr_api`, the brand's JSON feed) |
+| `link` | Optional human-facing page used in alerts when `url` is a data feed |
+| `extractor` | `rooter_rsc`, `html_text`, `jsonld_offers` or `gyftr_api` |
 | `availability_selector` | CSS selector for the stock text of *that* variant |
 | `price_selector` | CSS selector for the price |
 | `discount_selector` / `cashback_selector` | Optional offer text selectors |
@@ -268,6 +283,7 @@ Edit `psn_gift_card_alert_bot/config/products.yaml`:
 | `rooter_rsc` | The store ships a structured payload inside its HTML | Rooter |
 | `html_text` | Stock and price are in the server-rendered markup | e2z Store |
 | `jsonld_offers` | The store publishes schema.org JSON-LD offers | StanShop |
+| `gyftr_api` | The store serves stock from its own public JSON feed | GYFTR |
 
 `in_stock_classes` / `out_of_stock_classes` exist because some stores put the
 real signal in the element's class (`class="stock in-stock"`) while the visible
@@ -298,9 +314,11 @@ Safety rules that are enforced by the code, not by convention:
 | **Amazon India** | ❌ Disabled | Product/search pages return HTTP **503** to non-browser clients (bot protection). Needs the official **Creators API** (PA-API 5 is deprecated) plus Associates credentials. Do not attempt to bypass the blocking. |
 | **Games The Shop** | ❌ Disabled | Product data is fetched client-side from `/api/`, which `robots.txt` explicitly `Disallow`s. Respect it; needs an official feed/API. |
 | **Paytm** | ❌ Disabled | Search returns a generic marketing page; no server-rendered listings. |
+| **GYFTR** (`www.gyftr.com`) | ⏳ **Disabled, data path verified** | The PlayStation brand page is live (brand id 753, published), but its HTML is an empty Next.js shell: denominations, prices and a per-product `stock_left` count come from the site's own unauthenticated JSON feed (`api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation`), which answers a plain GET with the `Origin`/`Referer` its own JavaScript sends. Neither host's `robots.txt` restricts it; no cookie, credential or challenge is involved. The feed works (other brands return real stock counts) but currently returns **zero products** for PlayStation, so no denomination can be verified — 5 entries configured (Rs.1000–Rs.5000, denominations unverified) and disabled. |
 
 **15 entries are enabled across 3 retailers** (Rooter 5, e2z 6, StanShop 4),
-all PlayStation only.
+all PlayStation only. GYFTR adds 5 configured entries that stay disabled
+until its feed actually lists PlayStation products.
 
 ### Why Cloudflare bypass tools are not used
 
@@ -326,13 +344,21 @@ test against the live page):
 2. **Games The Shop** — needs an official data source; its `/api/` path is
    disallowed by robots.txt.
 3. **Paytm** — needs a server-rendered or official listing URL.
-4. For any page that lists several denominations at once, the selector must
+4. **GYFTR** — the feed and data path are verified, but the brand publishes
+   no products at all right now. Before enabling: run
+   `python github_runner.py --dry-run`, confirm each entry reads a real
+   `IN_STOCK`/`OUT_OF_STOCK` (not `UNKNOWN`), and delete any denomination
+   GYFTR does not actually list — an entry for a card GYFTR never sells
+   would sit at `UNKNOWN` forever.
+5. For any page that lists several denominations at once, the selector must
    be scoped to the exact denomination — otherwise "out of stock" for one
    variant can be read as stock for another.
 
 No working product URLs or selectors were invented. The 15 enabled entries
 (Rooter, e2z Store, StanShop) were each checked against the live page before
-`enabled: true` was set.
+`enabled: true` was set. GYFTR's feed URL was likewise checked and works, but
+its entries stay disabled because the brand currently lists no products to
+verify against.
 
 ---
 
@@ -355,8 +381,9 @@ python -m pytest
 ```
 
 Covers state persistence, stock transitions (including
-`OUT → UNKNOWN → IN`), price drops, duplicate suppression, the three extractors
-(`rooter_rsc`, `html_text`, `jsonld_offers`), class-based availability,
+`OUT → UNKNOWN → IN`), price drops, duplicate suppression, the four extractors
+(`rooter_rsc`, `html_text`, `jsonld_offers`, `gyftr_api`), class-based
+availability,
 safety rules (unknown never counts as in/out of stock),
 report scheduling, money parsing and token scrubbing.
 
@@ -364,8 +391,9 @@ report scheduling, money parsing and token scrubbing.
 
 ## Troubleshooting
 
-- **No alerts** — confirm the secret exists, send `/start` to the bot, check
-  the Actions log for `Linked Telegram chat id ending ...xxxx`.
+- **No alerts** — confirm both secrets (`TELEGRAM_BOT_TOKEN`,
+  `TELEGRAM_CHAT_ID`) exist, and that `TELEGRAM_CHAT_ID` matches your private
+  chat id (see setup step 1.3).
 - **`UNKNOWN` status** — the page did not contain a recognized phrase or the
   selector changed. This is safer than a false positive; inspect the selector.
 - **Exit code 2** — every enabled product failed: the retailer is likely

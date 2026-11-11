@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import requests
@@ -41,6 +42,13 @@ log = logging.getLogger("psn-alert")
 IN_STOCK = "IN_STOCK"
 OUT_OF_STOCK = "OUT_OF_STOCK"
 UNKNOWN = "UNKNOWN"
+# A product with no state entry (or no usable reading) has not been checked.
+# It is a fourth, distinct category: never merged into OUT_OF_STOCK.
+NOT_CHECKED = "NOT_CHECKED"
+
+#: Every status a report may display. Anything else is reported as
+#: :data:`NOT_CHECKED` so the report totals always reconcile.
+KNOWN_STATUSES = frozenset({IN_STOCK, OUT_OF_STOCK, UNKNOWN, NOT_CHECKED})
 
 # --------------------------------------------------------------------------- #
 # Paths
@@ -64,6 +72,15 @@ HEADERS = {
 }
 
 TELEGRAM_API = "https://api.telegram.org"
+# Telegram's hard per-message limit is 4096 UTF-16 code units (what the API
+# counts -- emoji and other astral characters weigh two units each).
+TELEGRAM_MESSAGE_LIMIT = 4096
+# Split a little below the hard limit so headers or escaping can never push a
+# part over the edge.
+TELEGRAM_SPLIT_LIMIT = 4000
+# Markdown emphasis runs that must not be cut in half (HTML tags are handled
+# separately by tag scanning in _safe_cut).
+_FORMAT_MARKERS = ("**", "__", "~~", "||")
 # Bound the amount of history kept in the committed state file.
 MAX_EVENTS = 100
 
@@ -140,7 +157,6 @@ def state_path() -> Path:
 def default_state() -> dict[str, Any]:
     return {
         "version": 1,
-        "chat_id": "",
         "last_daily_report_date": "",
         "products": {},
         "events": [],
@@ -167,6 +183,9 @@ def load_state(path: str | Path | None = None) -> dict[str, Any]:
         return default_state()
 
     base = default_state()
+    # Only known keys survive: legacy files that still carry a "chat_id"
+    # have it dropped here (the chat id lives in TELEGRAM_CHAT_ID, never in
+    # state), while products and event history are preserved verbatim.
     base.update({k: v for k, v in data.items() if k in base})
     if not isinstance(base["products"], dict):
         base["products"] = {}
@@ -176,13 +195,19 @@ def load_state(path: str | Path | None = None) -> dict[str, Any]:
 
 
 def save_state(state: dict[str, Any], path: str | Path | None = None) -> Path:
-    """Atomically write state so a crashed run cannot corrupt the file."""
+    """Atomically write state so a crashed run cannot corrupt the file.
+
+    The chat id is configuration, never state: it is stripped from the
+    payload on every write so it can never reach the committed state file,
+    even if a caller set it in the dict.
+    """
     target = Path(path) if path else state_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     events = state.get("events", [])
     if len(events) > MAX_EVENTS:
         state["events"] = events[-MAX_EVENTS:]
-    payload = json.dumps(state, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    persistable = {k: v for k, v in state.items() if k != "chat_id"}
+    payload = json.dumps(persistable, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
     tmp = target.with_suffix(target.suffix + ".tmp")
     tmp.write_text(payload, encoding="utf-8")
     tmp.replace(target)
@@ -626,16 +651,144 @@ def extract_jsonld(html: str, product: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _gyftr_denomination(candidate: dict[str, Any]) -> float | None:
+    """The denomination a GYFTR product row represents, if it can be read.
+
+    The feed publishes ``mrp`` (e.g. ``1000``); the name is a fallback for
+    rows where it is missing ("Sony Playstation Rs - 1000").
+    """
+    try:
+        return float(candidate.get("mrp"))
+    except (TypeError, ValueError):
+        pass
+    name = str(candidate.get("product_name") or "")
+    # Prefer the denomination the name states ("Sony Playstation Rs - 1000")
+    # over any other number that happens to appear in it.
+    digits = re.search(r"(?i)rs\D*(\d[\d,]*)", name) or re.search(r"(\d[\d,]*)", name)
+    if digits:
+        try:
+            return float(digits.group(1).replace(",", ""))
+        except ValueError:
+            return None
+    return None
+
+
+def extract_gyftr(html: str, product: dict[str, Any]) -> dict[str, Any]:
+    """Read one denomination from GYFTR's public brand-detail JSON feed.
+
+    GYFTR's brand pages are empty shells: denominations, prices and a
+    per-product ``stock_left`` count are served by the site's own
+    unauthenticated JSON endpoint, which every visitor's browser calls. The
+    stock count is an explicit reading, so:
+
+    * ``stock_left > 0`` -> ``IN_STOCK``
+    * ``stock_left == 0`` -> ``OUT_OF_STOCK`` (the feed keeps sold-out rows
+      listed, so zero is a real count, not an absence)
+    * the brand publishes no products, or this denomination is not among
+      them -> ``UNKNOWN``: "not listed" and "not in stock" are different
+      facts, exactly as in :func:`extract_jsonld`.
+
+    A response that is not the expected JSON shape raises
+    :class:`ExtractionError`, so a blocked or mangled reply preserves the
+    last known status instead of overwriting it.
+    """
+    try:
+        payload = json.loads(html)
+    except (ValueError, TypeError) as exc:
+        raise ExtractionError(f"brand detail response is not valid JSON: {exc}") from exc
+    if not isinstance(payload, dict) or payload.get("code") != 200:
+        code = payload.get("code") if isinstance(payload, dict) else type(payload).__name__
+        raise ExtractionError(f"unexpected brand detail payload (code={code!r})")
+    data = payload.get("data")
+    candidates = data.get("products") if isinstance(data, dict) else None
+    if not isinstance(candidates, list):
+        raise ExtractionError("brand detail payload has no product list")
+
+    if not candidates:
+        return {
+            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+            "cashback": "", "error": "",
+            "note": "GYFTR currently publishes no products for this brand",
+        }
+
+    denomination = product.get("denomination")
+    wanted: float | None = None
+    try:
+        wanted = float(denomination) if denomination is not None else None
+    except (TypeError, ValueError):
+        wanted = None
+    if wanted is None:
+        return {
+            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+            "cashback": "", "error": "",
+            "note": "no usable denomination configured for this entry",
+        }
+
+    match: dict[str, Any] | None = None
+    for candidate in candidates:
+        if isinstance(candidate, dict) and _gyftr_denomination(candidate) == wanted:
+            match = candidate
+            break
+    if match is None:
+        return {
+            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+            "cashback": "", "error": "",
+            "note": f"denomination {denomination} not among GYFTR's published products",
+        }
+
+    try:
+        stock = float(match.get("stock_left"))
+    except (TypeError, ValueError):
+        return {
+            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+            "cashback": "", "error": "",
+            "note": "GYFTR published no stock count for this product",
+        }
+
+    price = _gyftr_denomination(match)
+    return {
+        "ok": True,
+        "status": IN_STOCK if stock > 0 else OUT_OF_STOCK,
+        "price": price,
+        "discount": "",
+        "cashback": "",
+        "error": "",
+        "note": "",
+    }
+
+
 EXTRACTORS = {
     "rooter_rsc": extract_rooter,
     "html_text": extract_html,
     "jsonld_offers": extract_jsonld,
+    "gyftr_api": extract_gyftr,
 }
 
 
 # --------------------------------------------------------------------------- #
 # Fetching
 # --------------------------------------------------------------------------- #
+def _headers_for(url: str) -> dict[str, str]:
+    """Request headers for ``url``.
+
+    GYFTR's public JSON API answers only to requests that identify where
+    they come from, so for that host we send the same ``Origin``/``Referer``
+    its own JavaScript attaches to every call from the brand page. The
+    endpoint is unauthenticated, published in the site's shipped bundles,
+    and neither host's robots.txt restricts it: no cookie, credential,
+    challenge or fingerprint is involved -- only the standard headers a
+    normal browser sends. Every other URL gets the plain :data:`HEADERS`.
+    """
+    headers = dict(HEADERS)
+    if (urlparse(url).hostname or "").lower() == "api.gyftr.com":
+        headers.update({
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://www.gyftr.com",
+            "Referer": "https://www.gyftr.com/",
+        })
+    return headers
+
+
 def fetch_html(url: str, timeout: float = 30.0, session: requests.Session | None = None) -> str:
     """GET a product page. Raises on HTTP/network failure.
 
@@ -643,7 +796,7 @@ def fetch_html(url: str, timeout: float = 30.0, session: requests.Session | None
     cookie jar, no CAPTCHA handling, no anti-bot circumvention.
     """
     client = session or requests
-    response = client.get(url, headers=HEADERS, timeout=timeout)
+    response = client.get(url, headers=_headers_for(url), timeout=timeout)
     response.raise_for_status()
     return response.text
 
@@ -738,7 +891,9 @@ def evaluate(product: dict[str, Any], previous: dict[str, Any] | None,
         entry["baseline"] = bool(previous)
     alerts: list[Alert] = []
     label = product_label(product)
-    link = product.get("url", "")
+    # An optional per-product ``link`` overrides the fetched URL when those
+    # differ (GYFTR's feed URL is JSON a person cannot open in a browser).
+    link = product.get("link") or product.get("url", "")
 
     if not observation.get("ok"):
         # Network/parse failure: keep the last known status verbatim.
@@ -843,6 +998,17 @@ def telegram_token() -> str:
     return os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 
 
+def chat_id() -> str:
+    """Read the destination chat id from the environment only.
+
+    On GitHub Actions this is the ``TELEGRAM_CHAT_ID`` repository secret; in
+    local development it is an optional ``TELEGRAM_CHAT_ID`` variable in the
+    gitignored ``.env``. It is never read from, or written to, the state
+    file, and never logged.
+    """
+    return os.getenv("TELEGRAM_CHAT_ID", "").strip()
+
+
 def scrub(text: str, token: str | None = None) -> str:
     """Remove the bot token from any text destined for a log or error message."""
     secret = token if token is not None else telegram_token()
@@ -851,26 +1017,134 @@ def scrub(text: str, token: str | None = None) -> str:
     return text.replace(secret, "***TOKEN***")
 
 
-def send_message(token: str, chat_id: str, text: str,
-                 session: requests.Session | None = None) -> bool:
-    """Send one Telegram message. Returns True on success.
+def utf16_length(text: str) -> int:
+    """Length of ``text`` in UTF-16 code units -- what Telegram actually counts."""
+    return len(text.encode("utf-16-le")) // 2
 
-    Exceptions are logged through :func:`scrub` so the token -- which appears in
-    the request path -- can never leak into GitHub Actions logs.
+
+def _keep_run_intact(text: str, cut: int, budget: int, token: str) -> int:
+    """Adjust ``cut`` so a delimited run of ``token`` is not cut in half.
+
+    If the run opens before the cut, move the cut in front of it. If it opens
+    at position 0 (so there is nowhere to move back to), close it instead when
+    the closing token still fits inside the budget.
     """
-    if not token:
-        log.warning("TELEGRAM_BOT_TOKEN not set; notification skipped")
-        return False
-    if not chat_id:
-        log.warning("No chat_id yet; send /start to the bot first")
-        return False
+    if text[:cut].count(token) % 2 == 0:
+        return cut
+    open_at = text.rfind(token, 0, cut)
+    if open_at > 0:
+        return open_at
+    close_at = text.find(token, cut)
+    if close_at != -1 and close_at + len(token) <= budget:
+        return close_at + len(token)
+    return cut
+
+
+def _safe_cut(text: str, limit: int) -> int:
+    """Index at which ``text`` may be cut while staying within ``limit``.
+
+    ``limit`` is measured in UTF-16 code units (Telegram's accounting). The cut
+    prefers a word boundary and then adjusts so it cannot land inside an
+    HTML tag, a Markdown code span or an unclosed emphasis run. The messages
+    this bot sends are plain text (no ``parse_mode``), so such entities are
+    never interpreted -- the guards exist so that stays true even if markup is
+    added later. Always returns at least 1, so callers make progress.
+    """
+    if utf16_length(text) <= limit:
+        return len(text)
+
+    # Convert the UTF-16 budget into a Python string index.
+    budget = 0
+    units = 0
+    for budget in range(len(text)):
+        step = 2 if ord(text[budget]) > 0xFFFF else 1
+        if units + step > limit:
+            break
+        units += step
+    else:
+        budget = len(text)
+    if budget <= 0:
+        # The limit is smaller than the first character; still make progress.
+        return 1
+
+    # Prefer a word boundary inside the budget (consume the space so the next
+    # part does not start with it).
+    space_at = text.rfind(" ", 0, budget)
+    cut = space_at + 1 if space_at > 0 else budget
+
+    # Never end inside an HTML tag: if the last "<" has no matching ">" before
+    # the cut, move the cut in front of that "<" (or just past the tag's ">"
+    # when the tag starts at 0 and fits inside the budget).
+    open_at = text.rfind("<", 0, cut)
+    if open_at > text.rfind(">", 0, cut):
+        if open_at > 0:
+            cut = open_at
+        else:
+            close_at = text.find(">", cut)
+            if close_at != -1 and close_at + 1 <= budget:
+                cut = close_at + 1
+
+    # Never end inside a Markdown code span or an unclosed emphasis run.
+    for token in ("`",) + _FORMAT_MARKERS:
+        cut = _keep_run_intact(text, cut, budget, token)
+
+    return cut if cut > 0 else 1
+
+
+def split_message(text: str, limit: int = TELEGRAM_SPLIT_LIMIT) -> list[str]:
+    """Split ``text`` into ordered parts that each fit Telegram's limit.
+
+    Guarantees:
+
+    * lossless -- ``"".join(parts) == text``; nothing is ever discarded;
+    * every part is within ``limit`` UTF-16 code units (<= Telegram's 4096);
+    * cuts prefer line boundaries, so headings and their content stay
+      together and each part reads from the start of a line;
+    * a single line longer than the limit is cut at a formatting-safe point
+      rather than dropped.
+    """
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    if not text:
+        return []
+    if utf16_length(text) <= limit:
+        return [text]
+
+    parts: list[str] = []
+    chunk = ""
+    for line in text.splitlines(keepends=True):
+        # Flush the held chunk first so a long line starts a fresh part.
+        while utf16_length(line) > limit:
+            if chunk:
+                parts.append(chunk)
+                chunk = ""
+            cut = _safe_cut(line, limit)
+            parts.append(line[:cut])
+            line = line[cut:]
+        if utf16_length(chunk) + utf16_length(line) > limit:
+            parts.append(chunk)
+            chunk = line
+        else:
+            chunk += line
+    if chunk:
+        parts.append(chunk)
+    return parts
+
+
+def _send_part(token: str, chat_id: str, text: str,
+               session: requests.Session | None = None) -> bool:
+    """POST one already-sized message part. Returns True on success.
+
+    Exceptions are logged through :func:`scrub` so the token -- which appears
+    in the request path -- can never leak into GitHub Actions logs.
+    """
     client = session or requests
     try:
         response = client.post(
             f"{TELEGRAM_API}/bot{token}/sendMessage",
             json={
                 "chat_id": chat_id,
-                "text": text[:4000],
+                "text": text,
                 "disable_web_page_preview": True,
             },
             timeout=25,
@@ -885,6 +1159,42 @@ def send_message(token: str, chat_id: str, text: str,
         log.error("Telegram request failed: %s: %s",
                   type(exc).__name__, scrub(str(exc), token))
         return False
+
+
+def send_message(token: str, chat_id: str, text: str,
+                 session: requests.Session | None = None) -> bool:
+    """Send a Telegram message, splitting it when it exceeds the limit.
+
+    Long content (the daily report) is split at line boundaries and every
+    part is sent in order -- report content is never silently truncated. A
+    failed part is logged with its position and makes the overall send report
+    failure, so the caller retries and the content is eventually delivered in
+    full. Returns True only when every part was delivered.
+    """
+    if not token:
+        log.warning("TELEGRAM_BOT_TOKEN not set; notification skipped")
+        return False
+    if not chat_id:
+        log.warning("No destination chat (TELEGRAM_CHAT_ID); notification skipped")
+        return False
+
+    parts = split_message(text)
+    if not parts:
+        log.warning("Refusing to send an empty Telegram message")
+        return False
+
+    delivered = 0
+    for index, part in enumerate(parts, start=1):
+        if _send_part(token, chat_id, part, session):
+            delivered += 1
+        else:
+            log.error("Telegram message part %d of %d could not be delivered",
+                      index, len(parts))
+
+    if len(parts) > 1:
+        log.info("Telegram message split into %d parts; %d delivered",
+                 len(parts), delivered)
+    return delivered == len(parts)
 
 
 def claim_chat(token: str, session: requests.Session | None = None) -> str:
@@ -933,7 +1243,8 @@ def claim_chat(token: str, session: requests.Session | None = None) -> str:
         # when the command is picked from the bot's command menu.
         if ctype == "private" and command.split("@")[0] == "/start":
             chat_id = str(chat.get("id") or "")
-            log.info("Claimed private chat ...%s", chat_id[-4:])
+            # No digits in the log: chat ids are never written to logs.
+            log.info("Claimed a private chat for local pairing")
             continue
         log.info("Ignoring update: chat_type=%s command=%r", ctype,
                  command[:30] or "<no text>")
@@ -947,9 +1258,25 @@ def claim_chat(token: str, session: requests.Session | None = None) -> str:
 # --------------------------------------------------------------------------- #
 # Reporting
 # --------------------------------------------------------------------------- #
+def report_status(entry: dict[str, Any]) -> str:
+    """Status to display for a state entry, defaulting to NOT_CHECKED.
+
+    A missing, null or unrecognised stored status means "we have no usable
+    reading for this product" -- it is reported as NOT_CHECKED and never as
+    OUT_OF_STOCK.
+    """
+    status = entry.get("status")
+    return status if status in KNOWN_STATUSES else NOT_CHECKED
+
+
 def build_report(products: list[dict[str, Any]], state: dict[str, Any],
                  now: str, title: str) -> str:
-    """Build the availability report text sent to Telegram."""
+    """Build the availability report text sent to Telegram.
+
+    Every enabled product is accounted for exactly once across
+    IN_STOCK / OUT_OF_STOCK / UNKNOWN / NOT_CHECKED, and the displayed total
+    is reconciled against the enabled-product count.
+    """
     lines = [f"🎮 {title}", now, ""]
     active = enabled_products(products)
     if not active:
@@ -958,23 +1285,24 @@ def build_report(products: list[dict[str, Any]], state: dict[str, Any],
         return "\n".join(lines)
 
     entries = state.get("products", {})
-    counts = {IN_STOCK: 0, OUT_OF_STOCK: 0, UNKNOWN: 0}
+    counts = {status: 0 for status in (IN_STOCK, OUT_OF_STOCK, UNKNOWN, NOT_CHECKED)}
     for product in active:
-        entry = entries.get(product["id"]) or {}
-        status = entry.get("status", "NOT_CHECKED")
-        if status in counts:
-            counts[status] += 1
+        # report_status() maps anything unmapped to NOT_CHECKED, so the sum of
+        # the four buckets is exactly len(active) by construction.
+        counts[report_status(entries.get(product["id"]) or {})] += 1
 
+    total = sum(counts.values())
     lines.append(
         f"In stock: {counts[IN_STOCK]} · Out of stock: {counts[OUT_OF_STOCK]} "
-        f"· Unknown: {counts[UNKNOWN]}"
+        f"· Unknown: {counts[UNKNOWN]} · Not checked: {counts[NOT_CHECKED]}"
+        f" · Total: {total}/{len(active)} enabled"
     )
     lines.append("")
 
     last_error_seen = False
     for product in active:
         entry = entries.get(product["id"]) or {}
-        status = entry.get("status", "NOT_CHECKED")
+        status = report_status(entry)
         price = entry.get("price")
         price_text = f" · ₹{price:,.2f}" if isinstance(price, (int, float)) else ""
         lines.append(f"{product_label(product)}: {status}{price_text}")

@@ -168,37 +168,23 @@ def main(argv: list[str] | None = None) -> int:
     now_text = now.isoformat(timespec="seconds")
 
     # ------------------------------------------------------------------ #
-    # Claim a Telegram chat if nobody has been linked yet.
+    # Destination chat: the TELEGRAM_CHAT_ID environment variable (the
+    # TELEGRAM_CHAT_ID repository secret on GitHub Actions) is the only
+    # source. The chat id is configuration, never state -- it is never read
+    # from or written to state/state.json, and never logged.
     # ------------------------------------------------------------------ #
     token = core.telegram_token()
     if not token:
         gh_warning("TELEGRAM_BOT_TOKEN is not set; notifications are disabled")
         log.warning("TELEGRAM_BOT_TOKEN is not set. Add it under "
                     "Settings -> Secrets and variables -> Actions.")
-    if token and not state.get("chat_id"):
-        claimed = core.claim_chat(token)
-        if claimed:
-            state["chat_id"] = claimed
-            log.info("Linked Telegram chat id ending ...%s", claimed[-4:])
-            # Send a confirmation so pairing is provable from Telegram itself
-            # rather than only from the Actions log.
-            hello = (
-                "✅ *PSN gift card monitor linked*\n\n"
-                f"Monitoring {len(active)} product(s). You will be alerted when "
-                "a card comes back in stock, drops in price, or shows a "
-                "cashback offer.\n\n"
-                "A daily availability report arrives at 09:00 IST."
-            )
-            if core.send_message(token, claimed, hello):
-                log.info("Pairing confirmation delivered")
-            else:
-                log.warning("Pairing confirmation failed to send")
-        else:
-            log.info("No pending /start. Send /start to the bot, then re-run.")
-
-    chat_id = str(state.get("chat_id") or "")
+    chat_id = core.chat_id()
     if token and not chat_id:
-        gh_warning("No Telegram chat linked yet - send /start to your bot")
+        gh_warning("TELEGRAM_CHAT_ID is not set; alerts and reports are disabled")
+        log.warning("TELEGRAM_CHAT_ID is not set. Add it under "
+                    "Settings -> Secrets and variables -> Actions. Get your "
+                    "chat id from @userinfobot or by pairing locally with "
+                    "bot.py (/start replies with instructions).")
 
     # ------------------------------------------------------------------ #
     # Monitor every enabled product.
@@ -241,7 +227,8 @@ def main(argv: list[str] | None = None) -> int:
                 if chat_id:
                     core.send_message(token, chat_id, alert.message)
                 else:
-                    log.warning("Alert generated but no chat is linked yet; not sent")
+                    log.warning("Alert generated but TELEGRAM_CHAT_ID is not "
+                                "configured; not sent")
 
         # Pace only real network requests. Products that reused a cached page
         # cost no bandwidth, so sleeping after them would just slow the cycle.
@@ -256,9 +243,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.dry_run:
             log.info("Dry run: daily report suppressed")
         elif not chat_id:
-            # Do not retry forever when no chat is linked; record it as handled
-            # so the log does not fill with repeated attempts.
-            log.warning("Daily report due but no chat is linked; skipping send")
+            # Do not retry forever when no destination is configured; record
+            # it as handled so the log does not fill with repeated attempts.
+            log.warning("Daily report due but TELEGRAM_CHAT_ID is not "
+                        "configured; skipping send")
             state["last_daily_report_date"] = now.strftime("%Y-%m-%d")
         else:
             text = core.build_report(

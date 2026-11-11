@@ -44,20 +44,34 @@ INTERVAL = max(60, int(os.getenv("CHECK_INTERVAL_SECONDS", "1800")))
 REPORT_HOUR = int(os.getenv("DAILY_REPORT_HOUR", str(core.DEFAULT_REPORT_HOUR)))
 REPORT_MINUTE = int(os.getenv("DAILY_REPORT_MINUTE", "0"))
 
-# Set only if you want a fixed destination instead of pairing via /start.
-CHAT_ID_OVERRIDE = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+# Session-only pairing destination. Used when TELEGRAM_CHAT_ID is not set:
+# a local /start pairs the bot for as long as this process runs. It is kept
+# in memory only -- never written to state, logs or any file.
+_session_chat_id = ""
 
 _state_lock = threading.Lock()
 
 
-def get_chat_id(state: dict) -> str:
-    return CHAT_ID_OVERRIDE or str(state.get("chat_id") or "")
+def get_chat_id() -> str:
+    """Destination chat: environment only, then a session-only pairing."""
+    return core.chat_id() or _session_chat_id
 
 
-def send(state: dict, text: str) -> bool:
-    chat_id = get_chat_id(state)
+def _pair_session(chat_id: str) -> None:
+    """Remember a locally paired chat for this process only.
+
+    Kept in memory: never written to the state file, logs or any file. The
+    owner persists it via the optional local TELEGRAM_CHAT_ID variable.
+    """
+    global _session_chat_id
+    _session_chat_id = chat_id
+
+
+def send(text: str) -> bool:
+    chat_id = get_chat_id()
     if not chat_id:
-        log.info("No Telegram chat linked yet. Open the bot and send /start.")
+        log.info("TELEGRAM_CHAT_ID is not set. Add it to your local .env "
+                 "(see .env.example), or send /start to pair this session.")
         return False
     return core.send_message(TOKEN, chat_id, text)
 
@@ -100,13 +114,19 @@ def telegram_poll() -> None:
 
                 with _state_lock:
                     state = core.load_state()
-                    existing = get_chat_id(state)
+                    existing = get_chat_id()
 
                     if not existing and command == "/start":
-                        state["chat_id"] = chat_id
-                        core.save_state(state)
-                        send(state, "✅ PSN Gift Card Alert Bot connected.\n"
-                                    "Use /status, /report or /help.")
+                        # Session-only pairing: memory, never state or logs.
+                        _pair_session(chat_id)
+                        core.send_message(
+                            TOKEN, chat_id,
+                            "✅ PSN Gift Card Alert Bot connected.\n"
+                            "Use /status, /report or /help.\n\n"
+                            "This pairing lasts while this local process runs. "
+                            "To persist it, add TELEGRAM_CHAT_ID=" + chat_id +
+                            " to your local .env file (gitignored; never "
+                            "commit it).")
                         continue
                     if existing and chat_id != existing:
                         core.send_message(
@@ -114,16 +134,16 @@ def telegram_poll() -> None:
                             "This bot is already linked to another private chat.")
                         continue
                     if command == "/start":
-                        send(state, "Bot is active. Use /status, /report or /help.")
+                        send("Bot is active. Use /status, /report or /help.")
                     elif command == "/help":
-                        send(state, "Commands:\n/status — latest monitored status\n"
-                                    "/report — availability summary\n/help — this message")
+                        send("Commands:\n/status — latest monitored status\n"
+                             "/report — availability summary\n/help — this message")
                     elif command == "/status":
-                        send(state, core.build_report(
+                        send(core.build_report(
                             core.load_products(), state, core.now_iso(TZ),
                             "Current product status"))
                     elif command == "/report":
-                        send(state, core.build_report(
+                        send(core.build_report(
                             core.load_products(), state, core.now_iso(TZ),
                             "PSN gift card availability report"))
         except Exception as exc:  # noqa: BLE001 - polling must survive anything
@@ -165,7 +185,7 @@ def monitor_all() -> None:
             log.info("ALERT %s for %s", alert.type, pid)
             alerts.append(alert)
             core.record_event(state, pid, alert.type, alert.message, now)
-            send(state, alert.message)
+            send(alert.message)
 
         time.sleep(float(os.getenv("REQUEST_DELAY_SECONDS", "2")))
 
@@ -179,7 +199,7 @@ def daily_report() -> None:
         state = core.load_state()
     text = core.build_report(core.load_products(), state, core.now_iso(TZ),
                              "Daily PSN gift card availability report")
-    send(state, text)
+    send(text)
     state["last_daily_report_date"] = datetime.now(TZ).strftime("%Y-%m-%d")
     with _state_lock:
         core.save_state(state)
@@ -192,7 +212,11 @@ def main() -> None:
 
     log.info("Local bot starting. Interval=%ss, timezone=%s", INTERVAL, TZ)
     log.info("State file: %s", core.state_path())
-    log.info("Open your bot in Telegram and send /start.")
+    if core.chat_id():
+        log.info("Destination chat configured via TELEGRAM_CHAT_ID.")
+    else:
+        log.info("TELEGRAM_CHAT_ID not set; send /start to pair this session "
+                 "(add it to .env to persist across restarts).")
 
     threading.Thread(target=telegram_poll, daemon=True).start()
 

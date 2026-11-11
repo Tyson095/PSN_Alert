@@ -11,6 +11,8 @@ Covers the four areas that matter for correctness in GitHub Actions:
 from __future__ import annotations
 
 import json
+import logging
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -55,13 +57,13 @@ class TestStatePersistence:
         state = core.load_state(tmp_path / "absent.json")
         assert state["products"] == {}
         assert state["events"] == []
-        assert state["chat_id"] == ""
+        # The chat id is configuration (TELEGRAM_CHAT_ID), never state.
+        assert "chat_id" not in state
         assert state["last_daily_report_date"] == ""
 
     def test_round_trip_preserves_contents(self, tmp_path):
         path = tmp_path / "state.json"
         state = core.default_state()
-        state["chat_id"] = "123456789"
         state["last_daily_report_date"] = "2026-11-08"
         state["products"]["rooter-psn-1000"] = {
             "status": core.IN_STOCK, "price": 985.0, "discount": "",
@@ -71,12 +73,12 @@ class TestStatePersistence:
         core.save_state(state, path)
 
         loaded = core.load_state(path)
-        assert loaded["chat_id"] == "123456789"
         assert loaded["last_daily_report_date"] == "2026-11-08"
         entry = loaded["products"]["rooter-psn-1000"]
         assert entry["status"] == core.IN_STOCK
         assert entry["price"] == 985.0
         assert entry["baseline"] is True
+        assert "chat_id" not in loaded
 
     def test_state_is_written_as_valid_json(self, tmp_path):
         path = tmp_path / "state.json"
@@ -112,7 +114,9 @@ class TestStatePersistence:
             "stale_junk": "should not survive",
         }), encoding="utf-8")
         state = core.load_state(path)
-        assert state["chat_id"] == "42"
+        # Legacy files carried the chat id; it is configuration, not state,
+        # so it must not survive the load.
+        assert "chat_id" not in state
         assert "stale_junk" not in state
 
     def test_event_history_is_bounded(self, tmp_path):
@@ -1138,3 +1142,550 @@ class TestParseMoney:
     ])
     def test_values(self, text, expected):
         assert core.parse_money(text) == expected
+
+
+# =========================================================================== #
+# 13. Report totals -- every enabled product accounted for exactly once
+# =========================================================================== #
+COUNTS_RE = re.compile(
+    r"In stock: (\d+) · Out of stock: (\d+) · Unknown: (\d+) · Not checked: (\d+)"
+    r" · Total: (\d+)/(\d+) enabled"
+)
+
+
+def report_counts(text: str) -> dict[str, int]:
+    """Parse the summary counts line out of a built report."""
+    match = COUNTS_RE.search(text)
+    assert match, f"counts line missing from report:\n{text}"
+    in_s, out_s, unk_s, not_s, total_s, enabled_s = match.groups()
+    return {
+        "in_stock": int(in_s),
+        "out_of_stock": int(out_s),
+        "unknown": int(unk_s),
+        "not_checked": int(not_s),
+        "total": int(total_s),
+        "enabled": int(enabled_s),
+    }
+
+
+class TestReportTotals:
+    """The report must account for every enabled product exactly once.
+
+    NOT_CHECKED used to be dropped silently, so the displayed totals did not
+    reconcile with the enabled-product count. UNKNOWN and NOT_CHECKED must
+    never be folded into OUT_OF_STOCK.
+    """
+
+    @staticmethod
+    def _report(statuses):
+        """Build a report where each status is one product (None = no entry)."""
+        products = [product(id=f"p{i}") for i in range(len(statuses))]
+        state = core.default_state()
+        for i, status in enumerate(statuses):
+            if status is not None:
+                state["products"][f"p{i}"] = {"status": status, "baseline": True}
+        return core.build_report(products, state, T0, "Daily report")
+
+    @staticmethod
+    def _assert_reconciles(counts: dict[str, int], enabled: int) -> None:
+        buckets = ("in_stock", "out_of_stock", "unknown", "not_checked")
+        assert sum(counts[k] for k in buckets) == enabled
+        assert counts["total"] == enabled
+        assert counts["enabled"] == enabled
+
+    def test_all_products_checked(self):
+        counts = report_counts(
+            self._report([core.IN_STOCK, core.OUT_OF_STOCK, core.UNKNOWN])
+        )
+        assert counts["in_stock"] == 1
+        assert counts["out_of_stock"] == 1
+        assert counts["unknown"] == 1
+        assert counts["not_checked"] == 0
+        self._assert_reconciles(counts, 3)
+
+    def test_some_products_not_checked(self):
+        counts = report_counts(self._report([core.IN_STOCK, None, None]))
+        assert counts["in_stock"] == 1
+        assert counts["not_checked"] == 2
+        # NOT_CHECKED must never be counted as OUT_OF_STOCK.
+        assert counts["out_of_stock"] == 0
+        self._assert_reconciles(counts, 3)
+
+    def test_all_products_unknown(self):
+        counts = report_counts(self._report([core.UNKNOWN, core.UNKNOWN]))
+        assert counts["unknown"] == 2
+        assert counts["out_of_stock"] == 0
+        assert counts["not_checked"] == 0
+        self._assert_reconciles(counts, 2)
+
+    def test_mixed_statuses(self):
+        counts = report_counts(
+            self._report([core.IN_STOCK, core.OUT_OF_STOCK, core.UNKNOWN, None])
+        )
+        assert (
+            counts["in_stock"],
+            counts["out_of_stock"],
+            counts["unknown"],
+            counts["not_checked"],
+        ) == (1, 1, 1, 1)
+        self._assert_reconciles(counts, 4)
+
+    def test_entry_without_status_counts_as_not_checked(self):
+        """A state entry with no usable status is NOT_CHECKED, not OUT_OF_STOCK."""
+        products = [product(id="p0"), product(id="p1"), product(id="p2")]
+        state = core.default_state()
+        state["products"]["p0"] = {"baseline": True}        # no status key
+        state["products"]["p1"] = {"status": None}          # null status
+        state["products"]["p2"] = {"status": core.IN_STOCK, "baseline": True}
+        counts = report_counts(core.build_report(products, state, T0, "R"))
+        assert counts["in_stock"] == 1
+        assert counts["not_checked"] == 2
+        assert counts["out_of_stock"] == 0
+        self._assert_reconciles(counts, 3)
+
+    def test_report_lines_show_not_checked_status(self):
+        text = self._report([None])
+        assert ": NOT_CHECKED" in text
+        assert "OUT_OF_STOCK" not in text
+
+    def test_no_enabled_products(self):
+        text = core.build_report([], core.default_state(), T0, "Daily report")
+        assert "No products enabled yet" in text
+        assert "In stock:" not in text          # nothing to count, nothing shown
+
+    def test_totals_reconcile_for_every_status_combination(self):
+        """Parametrized sweep: the four buckets always sum to the enabled count."""
+        combos = [
+            [core.IN_STOCK],
+            [core.OUT_OF_STOCK],
+            [core.UNKNOWN],
+            [None],
+            [core.IN_STOCK, None],
+            [core.OUT_OF_STOCK, core.UNKNOWN, None, None],
+            [core.IN_STOCK, core.IN_STOCK, core.OUT_OF_STOCK,
+             core.UNKNOWN, None, None],
+        ]
+        for statuses in combos:
+            counts = report_counts(self._report(statuses))
+            self._assert_reconciles(counts, len(statuses))
+
+
+# =========================================================================== #
+# 14. Telegram message splitting
+# =========================================================================== #
+class _SendResponse:
+    """Stand-in for a Telegram sendMessage HTTP response."""
+
+    status_code = 200
+
+    def __init__(self, payload):
+        self._payload = payload
+        self.content = json.dumps(payload).encode()
+
+    def json(self):
+        return self._payload
+
+
+class _FakeTelegram:
+    """Records sendMessage calls; optionally fails specific call indexes."""
+
+    def __init__(self, fail_on=None):
+        self.calls = []
+        self.fail_on = set(fail_on or [])
+
+    def post(self, url, json=None, timeout=None):
+        index = len(self.calls)
+        self.calls.append({"url": url, "json": json, "timeout": timeout})
+        if index in self.fail_on:
+            return _SendResponse({"ok": False, "description": "boom"})
+        return _SendResponse({"ok": True, "result": {}})
+
+
+class TestMessageSplitting:
+    """Long reports must be split and fully delivered, never truncated."""
+
+    @staticmethod
+    def _long_report(lines=400):
+        return "\n".join(
+            f"product {i:03d}: IN_STOCK · ₹985.00 · offer text" for i in range(lines)
+        )
+
+    def test_report_below_limit_is_single_part(self):
+        text = "🎮 Daily report\nIn stock: 1\nline two"
+        assert core.split_message(text) == [text]
+
+    def test_report_under_split_limit_is_not_split(self):
+        text = self._long_report(lines=10)
+        assert core.utf16_length(text) <= core.TELEGRAM_SPLIT_LIMIT
+        assert core.split_message(text) == [text]
+
+    def test_report_exceeding_limit_is_fully_preserved(self):
+        text = self._long_report(lines=400)
+        assert core.utf16_length(text) > core.TELEGRAM_SPLIT_LIMIT
+        parts = core.split_message(text)
+        assert len(parts) > 1
+        assert "".join(parts) == text            # nothing silently discarded
+        for part in parts:
+            assert core.utf16_length(part) <= core.TELEGRAM_SPLIT_LIMIT
+            assert core.utf16_length(part) <= core.TELEGRAM_MESSAGE_LIMIT
+
+    def test_multiple_split_messages_preserve_order_and_line_boundaries(self):
+        text = "\n".join(f"line {i:05d} · status IN_STOCK" for i in range(800))
+        parts = core.split_message(text)
+        assert len(parts) > 2                    # more than one continuation
+        assert "".join(parts) == text
+        # Every boundary between parts falls immediately after a newline, so
+        # no line (and no heading) is ever cut in half.
+        consumed = 0
+        for part in parts[:-1]:
+            consumed += len(part)
+            assert text[consumed - 1] == "\n"
+
+    def test_headings_stay_with_their_content(self):
+        lines = ["🎮 Daily report", "2026-11-08T09:00:00+05:30", ""]
+        lines += [f"Retailer PSN ₹{d}: IN_STOCK" for d in range(1000, 1400)]
+        text = "\n".join(lines)
+        parts = core.split_message(text)
+        # The heading starts part 1 and never appears anywhere else.
+        assert parts[0].startswith("🎮 Daily report\n")
+        assert all("🎮 Daily report" not in part for part in parts[1:])
+        assert "".join(parts) == text
+
+    def test_long_individual_line_is_split_not_dropped(self):
+        text = "A" * 10000                      # one line, no whitespace at all
+        parts = core.split_message(text)
+        assert len(parts) > 1
+        assert "".join(parts) == text
+        for part in parts:
+            assert core.utf16_length(part) <= core.TELEGRAM_SPLIT_LIMIT
+            assert part                             # no empty parts
+
+    def test_long_line_with_emoji_respects_utf16_limit(self):
+        # Each emoji is one Python character but TWO UTF-16 code units -- the
+        # unit Telegram counts. Python-len-only splitting would overshoot.
+        text = "🎮x" * 3000
+        parts = core.split_message(text)
+        assert len(parts) > 1
+        assert "".join(parts) == text
+        for part in parts:
+            assert core.utf16_length(part) <= core.TELEGRAM_SPLIT_LIMIT
+
+    def test_special_characters_survive_splitting(self):
+        unit = ("🎮 Daily report\n"
+                "₹1,000.00 → ₹985.00 · <b>bold</b> · **strong** · 🟢 in stock\n")
+        text = unit * 200                        # way over the limit
+        parts = core.split_message(text)
+        assert len(parts) > 1
+        assert "".join(parts) == text
+        for part in parts:
+            assert core.utf16_length(part) <= core.TELEGRAM_SPLIT_LIMIT
+        # The HTML tag is never broken across parts.
+        for part in parts:
+            assert part.count("<b>") == part.count("</b>")
+
+    def test_cut_never_lands_inside_an_html_tag(self):
+        tag = '<a href="https://example.com/very/long/path">link</a>'
+        text = "y" * 30 + tag
+        parts = core.split_message(text, limit=60)
+        assert "".join(parts) == text
+        assert any(tag in part for part in parts)
+        for part in parts:
+            # balanced angle brackets => no part starts or ends mid-tag
+            assert part.count("<") == part.count(">")
+
+    def test_cut_never_lands_inside_markdown_code_span(self):
+        text = "a" * 40 + "`code snippet here`" + "b" * 40
+        parts = core.split_message(text, limit=30)
+        assert "".join(parts) == text
+        for part in parts:
+            assert part.count("`") % 2 == 0       # no half-open code span
+
+    def test_cut_never_lands_inside_markdown_emphasis(self):
+        text = "a" * 40 + "**important**" + "b" * 40
+        parts = core.split_message(text, limit=50)
+        assert "".join(parts) == text
+        for part in parts:
+            assert part.count("**") % 2 == 0      # no half-open bold run
+
+    def test_empty_text_yields_no_parts(self):
+        assert core.split_message("") == []
+
+    def test_invalid_limit_raises(self):
+        with pytest.raises(ValueError):
+            core.split_message("x" * 10, limit=0)
+
+    def test_send_message_short_text_single_post(self):
+        session = _FakeTelegram()
+        assert core.send_message("tok", "123", "hello", session=session) is True
+        assert len(session.calls) == 1
+        assert session.calls[0]["json"]["text"] == "hello"
+
+    def test_send_message_delivers_every_part_in_order(self):
+        text = self._long_report(lines=400)
+        session = _FakeTelegram()
+        assert core.send_message("tok", "123", text, session=session) is True
+        assert len(session.calls) > 1             # actually split
+        joined = "".join(call["json"]["text"] for call in session.calls)
+        assert joined == text                     # full content, in order
+        for call in session.calls:
+            assert call["json"]["chat_id"] == "123"
+            assert core.utf16_length(call["json"]["text"]) <= core.TELEGRAM_MESSAGE_LIMIT
+
+    def test_part_failure_is_logged_and_overall_send_reports_failure(self, caplog):
+        text = self._long_report(lines=400)
+        parts = core.split_message(text)
+        assert len(parts) >= 3
+        session = _FakeTelegram(fail_on={1})      # second part fails
+        with caplog.at_level(logging.ERROR, logger="psn-alert"):
+            ok = core.send_message("tok", "123", text, session=session)
+        assert ok is False                        # caller can retry
+        assert len(session.calls) == len(parts)   # remaining parts still attempted
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("part 2 of" in message for message in messages)
+
+    def test_empty_message_is_not_sent(self):
+        session = _FakeTelegram()
+        assert core.send_message("tok", "123", "", session=session) is False
+        assert session.calls == []
+
+
+# =========================================================================== #
+# 15. Chat id isolation -- configuration, never persisted state
+# =========================================================================== #
+class TestChatIdIsolation:
+    """TELEGRAM_CHAT_ID is read from the environment and never persisted.
+
+    The chat id must not appear in the committed state file or in logs; the
+    state file keeps only product observations and report scheduling.
+    """
+
+    def test_chat_id_read_from_environment_only(self, monkeypatch):
+        monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+        assert core.chat_id() == ""
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "  123456789  ")
+        assert core.chat_id() == "123456789"
+
+    def test_default_state_has_no_chat_id(self):
+        assert "chat_id" not in core.default_state()
+
+    def test_save_state_never_writes_chat_id(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "999888777")
+        path = tmp_path / "state.json"
+        state = core.default_state()
+        state["chat_id"] = "555444333"          # even if a caller sets it
+        state["products"]["p1"] = {"status": core.IN_STOCK, "baseline": True}
+        core.record_event(state, "p1", "RESTOCK", "restock message", T0)
+        core.save_state(state, path)
+
+        raw = path.read_text(encoding="utf-8")
+        assert "chat_id" not in raw
+        assert "555444333" not in raw            # no chat id from any source
+        assert "999888777" not in raw            # not even from the env value
+
+        # Product observations and event history survive untouched.
+        loaded = core.load_state(path)
+        assert "chat_id" not in loaded
+        assert loaded["products"]["p1"]["status"] == core.IN_STOCK
+        assert [e["type"] for e in loaded["events"]] == ["RESTOCK"]
+
+    def test_legacy_state_file_keeps_history_but_loses_chat_id(self, tmp_path):
+        """Upgrade path: existing observations preserved, chat id removed."""
+        path = tmp_path / "state.json"
+        legacy = {
+            "version": 1,
+            "chat_id": "111222333",
+            "last_daily_report_date": "2026-11-08",
+            "products": {"p1": {"status": core.OUT_OF_STOCK, "baseline": True}},
+            "events": [{"at": T0, "product_id": "p1", "type": "RESTOCK",
+                        "message": "m"}],
+        }
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+
+        state = core.load_state(path)
+        assert "chat_id" not in state
+        assert state["products"]["p1"]["status"] == core.OUT_OF_STOCK
+        assert state["last_daily_report_date"] == "2026-11-08"
+        assert len(state["events"]) == 1
+
+        # The next save persists history without the chat id.
+        core.save_state(state, path)
+        raw = path.read_text(encoding="utf-8")
+        assert "chat_id" not in raw
+        assert "111222333" not in raw
+        assert "p1" in raw                      # observations still committed
+
+    def test_runner_reads_chat_from_environment_not_state(self, tmp_path, monkeypatch):
+        """github_runner must take its destination from core.chat_id()."""
+        import inspect
+
+        import github_runner
+
+        source = inspect.getsource(github_runner)
+        assert 'state.get("chat_id")' not in source
+        assert "core.chat_id()" in source
+
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "444555666")
+        assert core.chat_id() == "444555666"
+
+
+# =========================================================================== #
+# GYFTR: public brand-detail JSON feed
+# =========================================================================== #
+class TestGyftrExtractor:
+    """GYFTR's brand pages are shells; its own JSON feed is the stock source.
+
+    The feed publishes an explicit per-product ``stock_left`` count, so a
+    zero is a real reading while an empty catalogue ("not listed") stays
+    UNKNOWN -- the same rule the JSON-LD extractor follows.
+    """
+
+    @staticmethod
+    def _payload(products) -> str:
+        return json.dumps({"code": 200, "message": "", "data": {"products": products}})
+
+    @staticmethod
+    def _run(payload: str, denomination=1000):
+        return core.extract_gyftr(
+            payload, {"denomination": denomination, "extractor": "gyftr_api"}
+        )
+
+    @staticmethod
+    def _row(mrp=1000, stock_left=7, name="Sony Playstation Rs - 1000"):
+        return {"product_name": name, "mrp": mrp, "stock_left": stock_left}
+
+    def test_registered_in_extractors(self):
+        assert core.EXTRACTORS["gyftr_api"] is core.extract_gyftr
+
+    def test_positive_stock_left_is_in_stock(self):
+        result = self._run(self._payload([self._row(stock_left=7)]))
+        assert result["status"] == core.IN_STOCK
+        assert result["price"] == 1000.0
+        assert result["ok"] is True
+
+    def test_zero_stock_left_is_out_of_stock(self):
+        """The feed keeps sold-out rows listed, so zero is a real count."""
+        result = self._run(self._payload([self._row(stock_left=0)]))
+        assert result["status"] == core.OUT_OF_STOCK
+
+    def test_missing_stock_count_is_unknown(self):
+        result = self._run(self._payload([self._row(stock_left=None)]))
+        assert result["status"] == core.UNKNOWN
+        assert "stock count" in result["note"]
+
+    def test_empty_catalogue_is_unknown_not_out_of_stock(self):
+        """Brand exists but publishes nothing: 'not listed' is not 'sold out'."""
+        result = self._run(self._payload([]))
+        assert result["ok"] is True
+        assert result["status"] == core.UNKNOWN
+        assert "no products" in result["note"]
+
+    def test_absent_denomination_is_unknown_not_out_of_stock(self):
+        result = self._run(
+            self._payload([self._row(mrp=500, name="Sony Playstation Rs - 500")]),
+            denomination=1000,
+        )
+        assert result["status"] == core.UNKNOWN
+        assert "not among" in result["note"]
+
+    def test_denomination_falls_back_to_product_name(self):
+        result = self._run(
+            self._payload([self._row(mrp=None, stock_left=4,
+                                     name="Sony Playstation Rs - 2,000")]),
+            denomination=2000,
+        )
+        assert result["status"] == core.IN_STOCK
+
+    def test_name_fallback_prefers_rs_amount_over_other_digits(self):
+        result = self._run(
+            self._payload([self._row(mrp=None, stock_left=1,
+                                     name="PS5 voucher Rs - 1000")]),
+            denomination=1000,
+        )
+        assert result["status"] == core.IN_STOCK
+
+    def test_non_json_response_raises(self):
+        """A mangled/blocked reply preserves the last known status instead."""
+        with pytest.raises(core.ExtractionError):
+            core.extract_gyftr("<html>403 Forbidden</html>",
+                               {"denomination": 1000, "extractor": "gyftr_api"})
+
+    def test_error_code_payload_raises(self):
+        with pytest.raises(core.ExtractionError):
+            self._run(json.dumps({"status": "fail", "statusCode": 404}))
+
+    def test_missing_product_list_raises(self):
+        with pytest.raises(core.ExtractionError):
+            self._run(json.dumps({"code": 200, "data": {"brand": {}}}))
+
+    def test_observe_end_to_end(self):
+        p = product(
+            id="gyftr-psn-1000", retailer="GYFTR", extractor="gyftr_api",
+            url="https://api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation",
+            link="https://www.gyftr.com/sony-playstation",
+        )
+        obs = core.observe(p, html=self._payload([self._row(stock_left=2)]))
+        assert obs["ok"] is True
+        assert obs["status"] == core.IN_STOCK
+        assert obs["error"] == ""
+
+
+class TestGyftrRequestHeaders:
+    """The feed needs the same Origin/Referer the site's own JS sends.
+
+    Nothing else changes: every other host gets the plain HEADERS, and the
+    header dict passed around is a copy so nothing leaks globally.
+    """
+
+    FEED = "https://api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation"
+
+    def test_feed_url_identifies_its_origin(self):
+        headers = core._headers_for(self.FEED)
+        assert headers["Origin"] == "https://www.gyftr.com"
+        assert headers["Referer"] == "https://www.gyftr.com/"
+        assert headers["Accept"] == "application/json, text/plain, */*"
+        assert headers["User-Agent"] == core.USER_AGENT
+
+    @pytest.mark.parametrize("url", [
+        "https://shop.rooter.gg/product/playstation-gift-cards",
+        "https://e2zstore.com/product/rs-1000-playstation-network-wallet-top-up/",
+        "https://www.stanshop.co/playstation-psn-gift-card-in-india",
+        "https://api.example.com/some/feed",
+    ])
+    def test_other_hosts_get_plain_headers(self, url):
+        assert core._headers_for(url) == core.HEADERS
+
+    def test_base_headers_are_never_mutated(self):
+        headers = core._headers_for(self.FEED)
+        headers["Origin"] = "https://evil.example"
+        assert "Origin" not in core.HEADERS
+
+
+class TestAlertLink:
+    """``link`` lets a data-feed URL alert with the human page instead."""
+
+    @staticmethod
+    def _previous(status=core.OUT_OF_STOCK, price=1000.0):
+        return {
+            "status": status, "price": price, "discount": "", "cashback": "",
+            "last_error": "", "first_seen_at": T0, "last_changed_at": T0,
+            "baseline": True, "last_known_status": status, "note": "",
+        }
+
+    def test_link_field_overrides_fetched_url_in_alerts(self):
+        p = product(
+            id="gyftr-psn-1000", retailer="GYFTR", extractor="gyftr_api",
+            url="https://api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation",
+            link="https://www.gyftr.com/sony-playstation",
+        )
+        evaluation = core.evaluate(p, self._previous(),
+                                   observation(core.IN_STOCK, 1000.0), T1)
+        assert [a.type for a in evaluation.alerts] == ["RESTOCK"]
+        message = evaluation.alerts[0].message
+        assert "https://www.gyftr.com/sony-playstation" in message
+        assert "api.gyftr.com" not in message
+
+    def test_url_is_used_when_no_link_is_given(self):
+        evaluation = core.evaluate(product(), self._previous(),
+                                   observation(core.IN_STOCK, 1000.0), T1)
+        assert [a.type for a in evaluation.alerts] == ["RESTOCK"]
+        assert product()["url"] in evaluation.alerts[0].message
