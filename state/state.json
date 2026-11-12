@@ -231,6 +231,66 @@
   ],
   "last_daily_report_date": "2026-11-12",
   "products": {
+    "blinkit-psn-1000": {
+      "baseline": false,
+      "cashback": "",
+      "discount": "",
+      "first_seen_at": "2026-11-12T23:32:44+05:30",
+      "last_changed_at": "2026-11-12T23:32:44+05:30",
+      "last_error": "HTTPError: 403 Client Error: Forbidden for url: https://blinkit.com/prn/sony-playstation-instant-voucher/prid/698590",
+      "last_known_status": null,
+      "note": "",
+      "price": null,
+      "status": "UNKNOWN"
+    },
+    "blinkit-psn-2000": {
+      "baseline": false,
+      "cashback": "",
+      "discount": "",
+      "first_seen_at": "2026-11-12T23:32:44+05:30",
+      "last_changed_at": "2026-11-12T23:32:44+05:30",
+      "last_error": "HTTPError: 403 Client Error: Forbidden for url: https://blinkit.com/prn/x/prid/698593",
+      "last_known_status": null,
+      "note": "",
+      "price": null,
+      "status": "UNKNOWN"
+    },
+    "blinkit-psn-3000": {
+      "baseline": false,
+      "cashback": "",
+      "discount": "",
+      "first_seen_at": "2026-11-12T23:32:44+05:30",
+      "last_changed_at": "2026-11-12T23:32:44+05:30",
+      "last_error": "HTTPError: 403 Client Error: Forbidden for url: https://blinkit.com/prn/x/prid/698594",
+      "last_known_status": null,
+      "note": "",
+      "price": null,
+      "status": "UNKNOWN"
+    },
+    "blinkit-psn-4000": {
+      "baseline": false,
+      "cashback": "",
+      "discount": "",
+      "first_seen_at": "2026-11-12T23:32:44+05:30",
+      "last_changed_at": "2026-11-12T23:32:44+05:30",
+      "last_error": "HTTPError: 403 Client Error: Forbidden for url: https://blinkit.com/prn/x/prid/699135",
+      "last_known_status": null,
+      "note": "",
+      "price": null,
+      "status": "UNKNOWN"
+    },
+    "blinkit-psn-5000": {
+      "baseline": false,
+      "cashback": "",
+      "discount": "",
+      "first_seen_at": "2026-11-12T23:32:44+05:30",
+      "last_changed_at": "2026-11-12T23:32:44+05:30",
+      "last_error": "HTTPError: 403 Client Error: Forbidden for url: https://blinkit.com/prn/x/prid/698592",
+      "last_known_status": null,
+      "note": "",
+      "price": null,
+      "status": "UNKNOWN"
+    },
     "e2z-psn-1000": {
       "baseline": true,
       "cashback": "",
