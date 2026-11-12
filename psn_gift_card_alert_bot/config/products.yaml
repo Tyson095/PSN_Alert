@@ -608,7 +608,7 @@ products:
     denomination: 1000
     url: https://www.woohoo.in/playstation-e-gift-instant-voucher
     extractor: woohoo_api
-    enabled: false
+    enabled: true
     verification: verified-2026-11-12
     notes: "Data path verified 2026-11-12 (slabs 1000-5000 all read OUT_OF_STOCK in the ledger). Dry-run, then enable."
 
@@ -617,7 +617,7 @@ products:
     denomination: 2000
     url: https://www.woohoo.in/playstation-e-gift-instant-voucher
     extractor: woohoo_api
-    enabled: false
+    enabled: true
     verification: verified-2026-11-12
     notes: "Same as woohoo-psn-1000."
 
@@ -626,7 +626,7 @@ products:
     denomination: 3000
     url: https://www.woohoo.in/playstation-e-gift-instant-voucher
     extractor: woohoo_api
-    enabled: false
+    enabled: true
     verification: verified-2026-11-12
     notes: "Same as woohoo-psn-1000."
 
@@ -635,7 +635,7 @@ products:
     denomination: 4000
     url: https://www.woohoo.in/playstation-e-gift-instant-voucher
     extractor: woohoo_api
-    enabled: false
+    enabled: true
     verification: verified-2026-11-12
     notes: "Same as woohoo-psn-1000."
 
@@ -644,7 +644,7 @@ products:
     denomination: 5000
     url: https://www.woohoo.in/playstation-e-gift-instant-voucher
     extractor: woohoo_api
-    enabled: false
+    enabled: true
     verification: verified-2026-11-12
     notes: "Same as woohoo-psn-1000."
 
