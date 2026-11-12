@@ -20,6 +20,12 @@
 #   gyftr_api     -> reads GYFTR's own public brand-detail JSON feed, which
 #                    publishes a per-product stock_left count. The brand page
 #                    itself is an empty shell; the feed is the only source.
+#   woohoo_api    -> reads Woohoo's server-rendered product page for the
+#                    offered slabs (window.__INITIAL_STATE) and the site's
+#                    own public inventory ledger for stock: a denomination
+#                    listed there is OUT_OF_STOCK, an offered denomination
+#                    that is absent is IN_STOCK. Two requests per cycle,
+#                    each shared by all five Woohoo entries.
 #
 # Verify an entry before enabling it:
 #   python github_runner.py --dry-run
@@ -208,20 +214,28 @@ products:
     verification: verified-2026-11-09
 
   # ── Games The Shop ────────────────────────────────────────────────────────
-  # DISABLED - data is not in the HTML.
+  # DISABLED - data is not in the HTML (blocker re-confirmed 2026-11-12).
   # The site is a Next.js app whose product page returns only a shell; the
   # real product data is fetched in the browser from /api/..., and
   # https://www.gamestheshop.com/robots.txt explicitly contains:
   #     Disallow: /api/
   # Fetching it anyway would violate that policy, so we do not.
-  # The search URL below is real and reachable, but it also renders client-side
-  # ("Loading results..."), so a plain HTTP request sees no products.
+  # The search URL below is real and reachable, but it also renders client-
+  # side ("Loading results..."), so a plain HTTP request sees no products.
+  #
+  # Re-checked 2026-11-12: the sitemap now lists 20 /product/<uuid> URLs
+  # (so requirement 1 below is satisfiable), but every one of those pages
+  # returns the same generic ~45 KB shell -- identical homepage title, no
+  # price, no stock text, no JSON-LD -- and the Next.js App Router RSC
+  # flight on the product path is 227 bytes of router metadata with no
+  # product data in it. The category flight lists no products either.
   #
   # To enable later you need BOTH:
   #   1. the exact product page UUID (from the site's own navigation or
   #      https://www.gamestheshop.com/sitemap.xml), and
   #   2. a server-rendered data source that is not under /api/.
-  # If neither exists, this retailer cannot be monitored here.
+  # Only 1 exists today; 2 does not, so this retailer stays disabled rather
+  # than gaining a misleading extractor.
   - id: gamestheshop-psn-1000
     retailer: Games The Shop
     denomination: 1000
@@ -235,8 +249,9 @@ products:
     out_of_stock_patterns: ["out of stock", "sold out"]
     enabled: false
     notes: >-
-      Needs an exact product UUID plus a server-rendered source. /api/ is
-      disallowed by robots.txt. Discovery page:
+      Re-checked 2026-11-12: the sitemap lists 20 product UUIDs now, but
+      each of those pages is a data-less shell - the data lives under /api/,
+      which robots.txt disallows. Still blocked. Discovery page:
       https://www.gamestheshop.com/search?condition=Digital&platforms=PlayStation%2CPS5%2CPS4%2CPSN
 
   - id: gamestheshop-psn-2000
@@ -541,6 +556,97 @@ products:
     extractor: gyftr_api
     enabled: false
     notes: "Same as gyftr-psn-1000: feed verified, no products listed to verify against."
+
+  # ── Woohoo ────────────────────────────────────────────────────────────────
+  # DISABLED pending human verification (data path VERIFIED 2026-11-12).
+  #
+  # One product page carries all five denominations:
+  #   https://www.woohoo.in/playstation-e-gift-instant-voucher
+  # robots.txt disallows only /en-in/; this page and the /proxy/ endpoint
+  # below are unrestricted, unauthenticated, and used by the site's own
+  # JavaScript. No cookie, login, checkout or challenge is involved.
+  #
+  # TWO SOURCES, exactly what the shop itself uses:
+  #   1. The page is server-rendered and embeds window.__INITIAL_STATE with
+  #      the product (sku B2CEGVGBPS001, upc.id 7864), the offered slab
+  #      list price.denominations = [1000, 2000, 3000, 4000, 5000] and the
+  #      slab amounts. The page carries NO stock field at all -- the default
+  #      slab display and the quantity limit (max 10) are configuration,
+  #      never stock, and are not read as stock.
+  #   2. Stock comes from the site's own inventory ledger:
+  #        GET /proxy/locale/en-in/product/inventories
+  #            ?searchCriteria[filter_groups][0][filters][0][field]
+  #              =universalProductCodes.entityId
+  #            &...[condition_type]=eq&...[value]=7864
+  #            &searchCriteria[limit]=2000&searchCriteria[offset]=0
+  #      The shipped bundle proves the direction of the signal: it maps each
+  #      returned row's denomination into outOfStockDenominations, blocks
+  #      cart items whose price is in that set ("Item is out of stock..."),
+  #      and the denomination selector switches away from a listed value.
+  #      Control brands that are normally purchasable (AJIO E-Gift Card,
+  #      Ajio Luxe) return inventories: []. Checked live 2026-11-12:
+  #      PlayStation currently returns all five denominations as rows
+  #      (ledger rows dated 2026-11-05..09), i.e. every slab is currently
+  #      OUT_OF_STOCK -- an explicit reading, not an inference.
+  #
+  # Failure handling (why this is safe to enable after verification):
+  #   * ledger fetch fails / bad JSON / wrong shape -> status preserved
+  #     (never OUT_OF_STOCK, never IN_STOCK);
+  #   * ledger "total" larger than the rows returned -> UNKNOWN;
+  #   * a configured denomination missing from the page's offered slabs
+  #     -> UNKNOWN (not offered is not the same as out of stock);
+  #   * a row without any denomination -> whole product OUT_OF_STOCK
+  #     (the bundle's isProductOutOfStock).
+  #
+  # To enable: python github_runner.py --dry-run, confirm every entry reads
+  # OUT_OF_STOCK today (or IN_STOCK if a slab restocked) rather than
+  # UNKNOWN, then set enabled: true. The runner already annotates each run
+  # with "woohoo-psn-1000: disabled entry now reads OUT_OF_STOCK -- verify
+  # ..." while these stay disabled.
+  - id: woohoo-psn-1000
+    retailer: Woohoo
+    denomination: 1000
+    url: https://www.woohoo.in/playstation-e-gift-instant-voucher
+    extractor: woohoo_api
+    enabled: false
+    verification: verified-2026-11-12
+    notes: "Data path verified 2026-11-12 (slabs 1000-5000 all read OUT_OF_STOCK in the ledger). Dry-run, then enable."
+
+  - id: woohoo-psn-2000
+    retailer: Woohoo
+    denomination: 2000
+    url: https://www.woohoo.in/playstation-e-gift-instant-voucher
+    extractor: woohoo_api
+    enabled: false
+    verification: verified-2026-11-12
+    notes: "Same as woohoo-psn-1000."
+
+  - id: woohoo-psn-3000
+    retailer: Woohoo
+    denomination: 3000
+    url: https://www.woohoo.in/playstation-e-gift-instant-voucher
+    extractor: woohoo_api
+    enabled: false
+    verification: verified-2026-11-12
+    notes: "Same as woohoo-psn-1000."
+
+  - id: woohoo-psn-4000
+    retailer: Woohoo
+    denomination: 4000
+    url: https://www.woohoo.in/playstation-e-gift-instant-voucher
+    extractor: woohoo_api
+    enabled: false
+    verification: verified-2026-11-12
+    notes: "Same as woohoo-psn-1000."
+
+  - id: woohoo-psn-5000
+    retailer: Woohoo
+    denomination: 5000
+    url: https://www.woohoo.in/playstation-e-gift-instant-voucher
+    extractor: woohoo_api
+    enabled: false
+    verification: verified-2026-11-12
+    notes: "Same as woohoo-psn-1000."
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ADDING A NEW RETAILER SAFELY

@@ -23,11 +23,12 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 from zoneinfo import ZoneInfo
 
 import requests
@@ -768,11 +769,266 @@ def extract_gyftr(html: str, product: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------------- #
+# Woohoo
+# --------------------------------------------------------------------------- #
+def woohoo_initial_state(html: str) -> dict[str, Any]:
+    """Parse ``window.__INITIAL_STATE`` out of a server-rendered Woohoo page.
+
+    Woohoo pre-renders its product pages and embeds the whole Redux state as
+    a single JSON assignment. The payload contains strings (terms HTML) that
+    themselves hold braces, so the object is delimited by a depth scan that
+    tracks string literals rather than by a greedy regex.
+    """
+    match = re.search(r"window\.__INITIAL_STATE\s*=\s*", html or "")
+    if match is None:
+        raise ExtractionError("Woohoo product page has no __INITIAL_STATE payload")
+    blob = html[match.end():]
+    depth = 0
+    end: int | None = None
+    in_string = False
+    escaped = False
+    for index, char in enumerate(blob):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                end = index + 1
+                break
+    if end is None:
+        raise ExtractionError("Woohoo __INITIAL_STATE payload is truncated")
+    try:
+        state = json.loads(blob[:end])
+    except ValueError as exc:
+        raise ExtractionError(
+            f"Woohoo __INITIAL_STATE is not valid JSON: {exc}") from exc
+    if not isinstance(state, dict):
+        raise ExtractionError("Woohoo __INITIAL_STATE is not a JSON object")
+    return state
+
+
+def woohoo_inventory_url(upc_id: str | int) -> str:
+    """Woohoo's public inventory-ledger URL for one product UPC.
+
+    Exactly the query the site's own shipped JavaScript builds for
+    ``GET product/inventories``: a Magento-style ``searchCriteria`` filter on
+    ``universalProductCodes.entityId``. It runs on the unauthenticated
+    ``/proxy`` path with no cookie or credential, and Woohoo's robots.txt
+    disallows only ``/en-in/`` -- this path is unrestricted.
+    """
+    query = urlencode({
+        "searchCriteria[filter_groups][0][filters][0][field]":
+            "universalProductCodes.entityId",
+        "searchCriteria[filter_groups][0][filters][0][condition_type]": "eq",
+        "searchCriteria[filter_groups][0][filters][0][value]": str(upc_id),
+        "searchCriteria[limit]": "2000",
+        "searchCriteria[offset]": "0",
+    })
+    return f"https://www.woohoo.in/proxy/locale/en-in/product/inventories?{query}"
+
+
+class _ResponseMemo:
+    """Process-local cache of one URL's response text or failure.
+
+    The five Woohoo entries watch a single product page and a single
+    inventory endpoint, observed seconds apart inside one cycle. In
+    production a cycle *is* one process (a GitHub Actions job), so the memo
+    collapses those reads to one request; the TTL keeps shorter-lived reuse
+    (tests, local loops) from replaying data captured an earlier cycle --
+    it expires well before the next cron tick. Failures are memoized for
+    the same reason ``github_runner.observe_cached`` memoizes them: a
+    hanging endpoint must cost one timeout per cycle, not one per entry.
+    """
+
+    def __init__(self, ttl: float = 45.0) -> None:
+        self._ttl = ttl
+        self._entries: dict[str, tuple[float, str | BaseException]] = {}
+
+    def get(self, url: str) -> str | BaseException | None:
+        hit = self._entries.get(url)
+        if hit is None:
+            return None
+        age, value = hit
+        if time.monotonic() - age > self._ttl:
+            self._entries.pop(url, None)
+            return None
+        return value
+
+    def put(self, url: str, value: str | BaseException) -> None:
+        self._entries[url] = (time.monotonic(), value)
+
+    def clear(self) -> None:
+        self._entries.clear()
+
+
+_WOOHOO_INVENTORY = _ResponseMemo(ttl=45.0)
+
+
+def fetch_woohoo_inventory(url: str, timeout: float = 30.0) -> str:
+    """GET Woohoo's inventory ledger at most once per cycle per URL.
+
+    A failure already recorded this cycle is re-raised verbatim, so one bad
+    endpoint costs one timeout for the whole cycle instead of one per entry.
+    """
+    cached = _WOOHOO_INVENTORY.get(url)
+    if cached is not None:
+        if isinstance(cached, BaseException):
+            raise cached
+        return cached
+    try:
+        text = fetch_html(url, timeout=timeout)
+    except Exception as exc:  # noqa: BLE001 - memoized, then reported by observe
+        _WOOHOO_INVENTORY.put(url, exc)
+        raise
+    _WOOHOO_INVENTORY.put(url, text)
+    return text
+
+
+def extract_woohoo(html: str, product: dict[str, Any]) -> dict[str, Any]:
+    """Read one Woohoo denomination: offered slabs from the page, stock from
+    the site's own public inventory ledger.
+
+    The product page is server-rendered and embeds
+    ``window.__INITIAL_STATE`` with the product's UPC id, its offered
+    denomination slabs and their amounts -- but it carries no stock field at
+    all. Stock lives on the unauthenticated endpoint the page's own bundle
+    calls (``/proxy/locale/en-in/product/inventories?...entityId=<upc>``),
+    which serves the *out-of-stock* ledger. The direction of that mapping is
+    proven by the shipped bundle: it collects every returned row's
+    ``denomination`` into ``outOfStockDenominations`` and blocks cart items
+    whose price is in that set ("Item is out of stock. Please remove this
+    item from your cart to continue"), the denomination selector switches
+    away from a listed value, and control brands that are normally
+    purchasable return an empty list.
+
+    Readings for the configured denomination:
+
+    * offered on the page and absent from the ledger -> ``IN_STOCK``;
+    * present in the ledger -> ``OUT_OF_STOCK`` (explicit signal);
+    * a ledger row without any denomination -> the whole product is sold
+      out (the bundle's ``isProductOutOfStock``);
+    * not among the offered slabs, no slab list published, or a partial
+      ledger (``total`` larger than the rows returned) -> ``UNKNOWN``:
+      "not offered" and "out of stock" are different facts, and neither the
+      default slab display nor the quantity limit says anything about
+      stock.
+
+    Fetch failures and unexpected payload shapes raise, so a blocked or
+    mangled reply preserves the last known status instead of overwriting it.
+    """
+    state = woohoo_initial_state(html)
+    app = state.get("appReducer")
+    details = app.get("product") if isinstance(app, dict) else None
+    if not isinstance(details, dict) or not details:
+        raise ExtractionError("Woohoo page payload has no product data")
+    upc = details.get("upc")
+    upc_id = upc.get("id") if isinstance(upc, dict) else None
+    if not upc_id:
+        raise ExtractionError("Woohoo page payload has no product UPC id")
+
+    price_cfg = details.get("price")
+    slabs = price_cfg.get("denominations") if isinstance(price_cfg, dict) else None
+    try:
+        wanted = float(product.get("denomination"))
+    except (TypeError, ValueError):
+        wanted = None
+    if wanted is None:
+        return {
+            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+            "cashback": "", "error": "",
+            "note": "no usable denomination configured for this entry",
+        }
+    if not isinstance(slabs, list) or not slabs:
+        return {
+            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+            "cashback": "", "error": "",
+            "note": "Woohoo publishes no denomination list for this product",
+        }
+    offered: dict[float, float] = {}
+    for slab in slabs:
+        try:
+            amount = float(slab)
+        except (TypeError, ValueError):
+            continue
+        offered[amount] = amount
+    if wanted not in offered:
+        return {
+            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+            "cashback": "", "error": "",
+            "note": (f"denomination {product.get('denomination')} is not among "
+                     "Woohoo's offered slabs"),
+        }
+
+    body = fetch_woohoo_inventory(woohoo_inventory_url(upc_id))
+    try:
+        payload = json.loads(body)
+    except (ValueError, TypeError) as exc:
+        raise ExtractionError(
+            f"inventory response is not valid JSON: {exc}") from exc
+    if not isinstance(payload, dict) or payload.get("code") not in ("0", 0):
+        code = (payload.get("code") if isinstance(payload, dict)
+                else type(payload).__name__)
+        raise ExtractionError(f"unexpected inventory payload (code={code!r})")
+    rows = payload.get("inventories")
+    if not isinstance(rows, list):
+        raise ExtractionError("inventory payload has no inventory list")
+    try:
+        total = int(payload.get("total"))
+    except (TypeError, ValueError):
+        total = None
+    if total is not None and total != len(rows):
+        return {
+            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+            "cashback": "", "error": "",
+            "note": (f"inventory response was incomplete "
+                     f"(total={total}, rows={len(rows)})"),
+        }
+
+    def row_denomination(row: Any) -> str:
+        value = row.get("denomination") if isinstance(row, dict) else None
+        return str(value or "").strip()
+
+    if any(not row_denomination(row) for row in rows):
+        # The bundle's isProductOutOfStock: a row without a denomination
+        # means the product itself, not one slab, is sold out.
+        status = OUT_OF_STOCK
+    else:
+        ledger: set[float] = set()
+        for row in rows:
+            try:
+                ledger.add(float(row_denomination(row)))
+            except ValueError:
+                continue
+        status = OUT_OF_STOCK if wanted in ledger else IN_STOCK
+
+    return {
+        "ok": True,
+        "status": status,
+        "price": offered[wanted],
+        "discount": "",
+        "cashback": "",
+        "error": "",
+        "note": "",
+    }
+
+
 EXTRACTORS = {
     "rooter_rsc": extract_rooter,
     "html_text": extract_html,
     "jsonld_offers": extract_jsonld,
     "gyftr_api": extract_gyftr,
+    "woohoo_api": extract_woohoo,
 }
 
 

@@ -14,6 +14,7 @@ import json
 import logging
 import re
 from datetime import datetime
+from urllib.parse import unquote
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -1658,6 +1659,340 @@ class TestGyftrRequestHeaders:
         headers = core._headers_for(self.FEED)
         headers["Origin"] = "https://evil.example"
         assert "Origin" not in core.HEADERS
+
+
+# =========================================================================== #
+# Woohoo: offered slabs from the page, stock from the public inventory ledger
+# =========================================================================== #
+class TestWoohooExtractor:
+    """Woohoo publishes stock nowhere on the page -- the ledger is the signal.
+
+    The shipped bundle maps every returned inventory row's denomination into
+    ``outOfStockDenominations`` and blocks cart items whose price is listed
+    there, so membership is the site's own explicit out-of-stock state. An
+    offered slab absent from the ledger is therefore IN_STOCK, a listed slab
+    is OUT_OF_STOCK, and anything unreadable stays UNKNOWN or preserves the
+    previous status -- never a fabricated stock state.
+    """
+
+    PAGE_URL = "https://www.woohoo.in/playstation-e-gift-instant-voucher"
+    ALL_SLABS = ["1000", "2000", "3000", "4000", "5000"]
+
+    @pytest.fixture(autouse=True)
+    def _clean_inventory_memo(self):
+        core._WOOHOO_INVENTORY.clear()
+        yield
+        core._WOOHOO_INVENTORY.clear()
+
+    @staticmethod
+    def _page(slabs=None, upc="7864", include_product=True):
+        slabs = TestWoohooExtractor.ALL_SLABS if slabs is None else slabs
+        product_payload: dict = {}
+        if include_product:
+            product_payload = {"sku": "B2CEGVGBPS001",
+                               "name": "PlayStation E-Gift Card"}
+            product_payload["upc"] = {"id": upc}
+            product_payload["price"] = {
+                "type": "SLAB", "min": "1000", "max": "5000",
+                "denominations": slabs, "defaultPrice": "2000",
+            }
+        state = {"appReducer": {"product": product_payload}}
+        return (
+            "<html><head><title>PlayStation E Gift Card</title></head>"
+            "<body><script>window.__INITIAL_STATE = "
+            + json.dumps(state) + ";</script></body></html>"
+        )
+
+    @staticmethod
+    def _ledger(denominations, total=None, code="0"):
+        rows = [{
+            "entityId": 4200 + i, "upcId": 7864,
+            "upc": "QC-EGV-PlayStation-VAR", "denomination": denom,
+            "createdAt": "2026-11-07 11:19:52 +0000 UTC",
+            "updatedAt": "2026-11-07 11:19:52 +0000 UTC",
+        } for i, denom in enumerate(denominations)]
+        payload = {
+            "code": code, "inventories": rows,
+            "message": "Inventories fetched successfully.",
+            "total": len(rows) if total is None else total,
+        }
+        return json.dumps(payload)
+
+    @staticmethod
+    def _product(denomination=1000):
+        return product(
+            id=f"woohoo-psn-{denomination}", retailer="Woohoo",
+            denomination=denomination,
+            url=TestWoohooExtractor.PAGE_URL, extractor="woohoo_api",
+        )
+
+    @staticmethod
+    def _serve(body, calls=None):
+        """Fake ``core.fetch_html`` returning (or raising) ``body``."""
+        def fake(url, timeout=30.0):
+            if calls is not None:
+                calls.append(url)
+            if isinstance(body, BaseException):
+                raise body
+            return body
+        return fake
+
+    # -- wiring ------------------------------------------------------------ #
+    def test_registered_in_extractors(self):
+        assert core.EXTRACTORS["woohoo_api"] is core.extract_woohoo
+
+    def test_inventory_url_derives_upc_from_configured_query(self):
+        # urlencode percent-encodes the bracketed keys; decode to assert the
+        # query's actual structure.
+        url = unquote(core.woohoo_inventory_url("7864"))
+        assert (url.startswith(
+            "https://www.woohoo.in/proxy/locale/en-in/product/inventories?"))
+        assert "universalProductCodes.entityId" in url
+        assert "[value]=7864" in url
+        assert "[limit]=2000" in url and "[offset]=0" in url
+
+    # -- in stock ----------------------------------------------------------- #
+    def test_offered_slab_absent_from_ledger_is_in_stock(self, monkeypatch):
+        """The ledger lists what is sold out; absence means purchasable."""
+        monkeypatch.setattr(core, "fetch_html",
+                            self._serve(self._ledger(["2000", "3000"])))
+        obs = core.observe(self._product(1000), html=self._page())
+        assert obs["ok"] is True
+        assert obs["status"] == core.IN_STOCK
+
+    def test_empty_ledger_is_in_stock_for_every_offered_slab(self, monkeypatch):
+        """Control brands return inventories: [] while normally purchasable."""
+        monkeypatch.setattr(core, "fetch_html",
+                            self._serve(self._ledger([])))
+        for denom in (1000, 5000):
+            obs = core.observe(self._product(denom), html=self._page())
+            assert obs["status"] == core.IN_STOCK
+
+    # -- out of stock ------------------------------------------------------- #
+    def test_listed_denomination_is_explicitly_out_of_stock(self, monkeypatch):
+        monkeypatch.setattr(core, "fetch_html",
+                            self._serve(self._ledger(["1000", "2000"])))
+        obs = core.observe(self._product(1000), html=self._page())
+        assert obs["ok"] is True
+        assert obs["status"] == core.OUT_OF_STOCK
+
+    def test_ledger_row_without_denomination_is_product_out_of_stock(
+            self, monkeypatch):
+        """The bundle's isProductOutOfStock: a denom-less row sells nothing."""
+        body = json.dumps({
+            "code": "0",
+            "inventories": [{"entityId": 1, "upcId": 7864, "denomination": ""}],
+            "message": "", "total": 1,
+        })
+        monkeypatch.setattr(core, "fetch_html", self._serve(body))
+        obs = core.observe(self._product(4000), html=self._page())
+        assert obs["status"] == core.OUT_OF_STOCK
+
+    # -- price and denomination come from the data, never the URL ----------- #
+    def test_price_is_the_amount_the_page_publishes(self, monkeypatch):
+        monkeypatch.setattr(core, "fetch_html",
+                            self._serve(self._ledger(["1000", "5000"])))
+        in_stock = core.observe(self._product(3000), html=self._page())
+        assert in_stock["price"] == 3000.0
+        out = core.observe(self._product(5000), html=self._page())
+        assert out["status"] == core.OUT_OF_STOCK
+        assert out["price"] == 5000.0
+
+    def test_ledger_url_uses_the_upc_embedded_in_the_page(self, monkeypatch):
+        calls: list[str] = []
+        monkeypatch.setattr(core, "fetch_html",
+                            self._serve(self._ledger([]), calls))
+        core.observe(self._product(1000),
+                     html=self._page(upc="9999"))
+        assert len(calls) == 1
+        assert "[value]=9999" in unquote(calls[0])
+
+    # -- ambiguous reads stay UNKNOWN --------------------------------------- #
+    def test_unoffered_denomination_is_unknown_without_touching_ledger(
+            self, monkeypatch):
+        """A slab Woohoo no longer offers is 'not sold', not 'sold out'."""
+        calls: list[str] = []
+        monkeypatch.setattr(core, "fetch_html",
+                            self._serve(self._ledger([]), calls))
+        obs = core.observe(self._product(7000), html=self._page())
+        assert obs["ok"] is True
+        assert obs["status"] == core.UNKNOWN
+        assert "not among" in obs["note"]
+        assert calls == []  # never asked the ledger about an unoffered slab
+
+    def test_missing_slab_list_is_unknown(self, monkeypatch):
+        monkeypatch.setattr(core, "fetch_html",
+                            self._serve(self._ledger([])))
+        obs = core.observe(self._product(1000),
+                           html=self._page(slabs=[]))
+        assert obs["status"] == core.UNKNOWN
+        assert "no denomination list" in obs["note"]
+
+    def test_incomplete_ledger_is_unknown_not_out_of_stock(self, monkeypatch):
+        """total beyond the rows actually returned means a partial reply."""
+        monkeypatch.setattr(core, "fetch_html",
+                            self._serve(self._ledger(["1000", "2000"],
+                                                     total=7)))
+        obs = core.observe(self._product(3000), html=self._page())
+        assert obs["ok"] is True
+        assert obs["status"] == core.UNKNOWN
+        assert "incomplete" in obs["note"]
+
+    # -- malformed / failed reads ------------------------------------------- #
+    def test_page_without_initial_state_raises(self):
+        with pytest.raises(core.ExtractionError, match="__INITIAL_STATE"):
+            core.extract_woohoo("<html>Access denied</html>",
+                                {"denomination": 1000})
+
+    def test_truncated_initial_state_raises(self):
+        with pytest.raises(core.ExtractionError, match="truncated"):
+            core.extract_woohoo(
+                'window.__INITIAL_STATE = {"appReducer": {"product": {',
+                {"denomination": 1000})
+
+    def test_page_without_product_data_raises(self):
+        with pytest.raises(core.ExtractionError, match="no product data"):
+            core.extract_woohoo(self._page(include_product=False),
+                                {"denomination": 1000})
+
+    def test_page_without_upc_id_raises(self):
+        page = ('window.__INITIAL_STATE = '
+                + json.dumps({"appReducer": {"product": {"sku": "x"}}}))
+        with pytest.raises(core.ExtractionError, match="UPC id"):
+            core.extract_woohoo(page, {"denomination": 1000})
+
+    def test_malformed_ledger_json_preserves_status_via_observe(
+            self, monkeypatch):
+        monkeypatch.setattr(core, "fetch_html",
+                            self._serve("<html>503 Service Unavailable</html>"))
+        obs = core.observe(self._product(1000), html=self._page())
+        assert obs["ok"] is False
+        assert obs["status"] is None  # never a stock state
+        assert "not valid JSON" in obs["error"]
+
+    def test_missing_stock_field_raises(self, monkeypatch):
+        body = json.dumps({"code": "0", "message": "", "total": 0})
+        monkeypatch.setattr(core, "fetch_html", self._serve(body))
+        with pytest.raises(core.ExtractionError, match="no inventory list"):
+            core.extract_woohoo(self._page(),
+                                {"denomination": 1000, "extractor": "woohoo_api"})
+
+    def test_error_code_payload_raises(self, monkeypatch):
+        monkeypatch.setattr(
+            core, "fetch_html",
+            self._serve(self._ledger([], code="INTERNAL_ERROR")))
+        with pytest.raises(core.ExtractionError, match="unexpected inventory"):
+            core.extract_woohoo(self._page(),
+                                {"denomination": 1000, "extractor": "woohoo_api"})
+
+    @pytest.mark.parametrize("failure", [
+        core.requests.HTTPError("503 Service Unavailable"),
+        core.requests.Timeout("read timed out"),
+        ConnectionError("connection reset"),
+    ])
+    def test_ledger_fetch_failures_never_produce_a_status(
+            self, monkeypatch, failure):
+        monkeypatch.setattr(core, "fetch_html", self._serve(failure))
+        obs = core.observe(self._product(1000), html=self._page())
+        assert obs["ok"] is False
+        assert obs["status"] is None
+        assert failure.__class__.__name__ in obs["error"]
+
+    def test_page_fetch_failure_never_produces_a_status(self):
+        session = _RaisingSession(core.requests.Timeout("read timed out"))
+        obs = core.observe(self._product(1000), session=session)
+        assert obs["ok"] is False
+        assert obs["status"] is None
+
+    # -- per-cycle sharing --------------------------------------------------- #
+    def test_five_entries_share_one_ledger_request(self, monkeypatch):
+        calls: list[str] = []
+        monkeypatch.setattr(core, "fetch_html",
+                            self._serve(self._ledger(["1000"]), calls))
+        page = self._page()
+        for denom in (1000, 2000, 3000, 4000, 5000):
+            core.observe(self._product(denom), html=page)
+        assert len(calls) == 1
+
+    def test_a_failed_ledger_request_is_memoized_for_the_cycle(
+            self, monkeypatch):
+        calls: list[str] = []
+        monkeypatch.setattr(
+            core, "fetch_html",
+            self._serve(core.requests.Timeout("read timed out"), calls))
+        page = self._page()
+        first = core.observe(self._product(1000), html=page)
+        second = core.observe(self._product(2000), html=page)
+        assert first["ok"] is False and second["ok"] is False
+        assert len(calls) == 1  # one timeout per cycle, not one per entry
+
+    # -- alert behaviour around the new extractor ---------------------------- #
+    def test_no_restock_alert_on_first_observation(self):
+        evaluation = core.evaluate(
+            self._product(), None, observation(core.IN_STOCK, 1000.0), T1)
+        assert evaluation.alerts == []
+        assert evaluation.entry["baseline"] is True
+        assert evaluation.entry["status"] == core.IN_STOCK
+
+    def test_unknown_is_never_read_as_out_of_stock(self):
+        previous = {
+            "status": core.OUT_OF_STOCK, "price": 1000.0, "discount": "",
+            "cashback": "", "last_error": "", "first_seen_at": T0,
+            "last_changed_at": T0, "baseline": True,
+            "last_known_status": core.OUT_OF_STOCK, "note": "",
+        }
+        evaluation = core.evaluate(
+            self._product(), previous, observation(core.UNKNOWN, None), T1)
+        assert evaluation.alerts == []
+        assert evaluation.entry["status"] == core.UNKNOWN
+        # The witnessed OUT_OF_STOCK survives UNKNOWN for the next comparison.
+        assert evaluation.entry["last_known_status"] == core.OUT_OF_STOCK
+
+    def test_fetch_failure_keeps_the_previous_known_status(self):
+        previous = {
+            "status": core.IN_STOCK, "price": 1000.0, "discount": "",
+            "cashback": "", "last_error": "", "first_seen_at": T0,
+            "last_changed_at": T0, "baseline": True,
+            "last_known_status": core.IN_STOCK, "note": "",
+        }
+        failed = observation(ok=False, status=None,
+                             error="requests.Timeout: read timed out")
+        evaluation = core.evaluate(self._product(), previous, failed, T1)
+        assert evaluation.alerts == []
+        assert evaluation.entry["status"] == core.IN_STOCK  # not OUT_OF_STOCK
+        assert evaluation.entry["last_error"] != ""
+
+    def test_restock_fires_after_a_witnessed_out_of_stock(self):
+        previous = {
+            "status": core.OUT_OF_STOCK, "price": 1000.0, "discount": "",
+            "cashback": "", "last_error": "", "first_seen_at": T0,
+            "last_changed_at": T0, "baseline": True,
+            "last_known_status": core.OUT_OF_STOCK, "note": "",
+        }
+        evaluation = core.evaluate(
+            self._product(), previous, observation(core.IN_STOCK, 1000.0), T1)
+        assert [a.type for a in evaluation.alerts] == ["RESTOCK"]
+        assert self.PAGE_URL in evaluation.alerts[0].message
+
+    def test_observe_end_to_end(self, monkeypatch):
+        monkeypatch.setattr(core, "fetch_html",
+                            self._serve(self._ledger(["1000", "2000",
+                                                      "3000", "4000"])))
+        obs = core.observe(self._product(5000), html=self._page())
+        assert obs == {
+            "ok": True, "status": core.IN_STOCK, "price": 5000.0,
+            "discount": "", "cashback": "", "error": "", "note": "",
+        }
+
+
+class _RaisingSession:
+    """Session stand-in whose ``get`` always fails (page-level fetch tests)."""
+
+    def __init__(self, exc: BaseException):
+        self.exc = exc
+
+    def get(self, *args, **kwargs):
+        raise self.exc
 
 
 class TestAlertLink:
