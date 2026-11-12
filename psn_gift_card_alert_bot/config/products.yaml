@@ -648,6 +648,108 @@ products:
     verification: verified-2026-11-12
     notes: "Same as woohoo-psn-1000."
 
+  # ------------------------------------------------------------------ #
+  # Blinkit (blinkit.com) - DATA PATH VERIFIED AND ENABLED 2026-11-12.
+  #
+  # Sells the Sony PlayStation Instant Voucher in five denominations.
+  # robots.txt allows /prn/ product pages (it disallows /cart, /checkout,
+  # /account, /s/* search and a few sections - none of which we touch),
+  # and the product page is server-rendered with schema.org JSON-LD:
+  #
+  #   {"@type":"Product","sku":"698590", ...,
+  #    "offers":{"@type":"Offer",
+  #              "availability":"https://schema.org/OutOfStock",
+  #              "price":1000,"priceCurrency":"INR"}}
+  #
+  # That is the same fixed availability vocabulary jsonld_offers already
+  # reads for StanShop and e2z, so no new extractor is needed: the offer
+  # price must equal the configured denomination, otherwise UNKNOWN.
+  # The page also embeds window.grofers.PRELOADED_STATE whose PDP snippets
+  # carry a per-variant list (product_id, mrp/price, inventory,
+  # is_sold_out); JSON-LD and BFF agreed on every check so far.
+  #
+  # One URL per denomination (all fetched live 2026-11-12, HTTP 200,
+  # correct sku and price, availability OutOfStock for all five):
+  #   1000 -> /prn/sony-playstation-instant-voucher/prid/698590 (sitemap)
+  #   2000 -> /prn/x/prid/698593
+  #   3000 -> /prn/x/prid/698594
+  #   4000 -> /prn/x/prid/699135
+  #   5000 -> /prn/x/prid/698592
+  # Blinkit's own share deeplink uses the /prn/x/prid/<id> form.
+  #
+  # Direction proven with a control the same day:
+  # amazon-shopping-voucher/prid/586903 publishes availability InStock, so
+  # InStock/OutOfStock are live values, not a static template.
+  #
+  # Caveat: SSR renders a default delivery location - stock can differ
+  # per address, so treat an alert as "check the link", not a guarantee.
+  # Every fetch is one plain GET with the standard browser UA: no cookie,
+  # login, cart or challenge involved.
+  #
+  # Enabled 2026-11-12 after python github_runner.py --dry-run read
+  # OUT_OF_STOCK (a real status, not UNKNOWN) on all five entries; the
+  # first observation seeds baselines and the first stock transition alerts.
+  - id: blinkit-psn-1000
+    retailer: Blinkit
+    denomination: 1000
+    url: https://blinkit.com/prn/sony-playstation-instant-voucher/prid/698590
+    extractor: jsonld_offers
+    enabled: true
+    verification: verified-2026-11-12
+    notes: "JSON-LD sku 698590, price 1000, OutOfStock on 2026-11-12; control publishes InStock. Enabled 2026-11-12 after dry-run."
+
+  - id: blinkit-psn-2000
+    retailer: Blinkit
+    denomination: 2000
+    url: https://blinkit.com/prn/x/prid/698593
+    extractor: jsonld_offers
+    enabled: true
+    verification: verified-2026-11-12
+    notes: "JSON-LD sku 698593, price 2000, OutOfStock on 2026-11-12. Enabled 2026-11-12 after dry-run."
+
+  - id: blinkit-psn-3000
+    retailer: Blinkit
+    denomination: 3000
+    url: https://blinkit.com/prn/x/prid/698594
+    extractor: jsonld_offers
+    enabled: true
+    verification: verified-2026-11-12
+    notes: "JSON-LD sku 698594, price 3000, OutOfStock on 2026-11-12. Enabled 2026-11-12 after dry-run."
+
+  - id: blinkit-psn-4000
+    retailer: Blinkit
+    denomination: 4000
+    url: https://blinkit.com/prn/x/prid/699135
+    extractor: jsonld_offers
+    enabled: true
+    verification: verified-2026-11-12
+    notes: "JSON-LD sku 699135, price 4000, OutOfStock on 2026-11-12. Enabled 2026-11-12 after dry-run."
+
+  - id: blinkit-psn-5000
+    retailer: Blinkit
+    denomination: 5000
+    url: https://blinkit.com/prn/x/prid/698592
+    extractor: jsonld_offers
+    enabled: true
+    verification: verified-2026-11-12
+    notes: "JSON-LD sku 698592, price 5000, OutOfStock on 2026-11-12. Enabled 2026-11-12 after dry-run."
+
+  # ------------------------------------------------------------------ #
+  # Zepto - BLOCKED 2026-11-12, no entries configured.
+  #
+  # Zepto does sell PSN gift cards (IGN India and r/ps5india report the
+  # catalogue), but every plain GET to www.zeptonow.com and www.zepto.com
+  # - home, search and product pages alike - returns HTTP 202 with an
+  # empty body and the header "x-amzn-waf-action: challenge": an AWS WAF
+  # CAPTCHA/JS challenge in front of CloudFront, served before any page
+  # content exists.
+  #
+  # There is nothing to parse, and no bypass will be attempted (no CAPTCHA
+  # solving, no challenge evasion - see README). Re-check later: if the
+  # site starts serving product pages to plain GETs, add entries here the
+  # same way as Blinkit.
+  # ------------------------------------------------------------------ #
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ADDING A NEW RETAILER SAFELY
 # ─────────────────────────────────────────────────────────────────────────────

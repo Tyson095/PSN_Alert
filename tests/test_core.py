@@ -816,6 +816,55 @@ class TestJsonLdExtractor:
         assert len(offers) == 2
 
 
+class TestBlinkitJsonLdShape:
+    """Blinkit publishes one server-rendered JSON-LD Product per variant URL.
+
+    Captured live 2026-11-12: the context is the rare
+    ``https://www.schema.org`` spelling, the offer is a bare dict with a
+    numeric price, and each denomination is its own URL (prid 698590 =
+    Rs.1000, ...698592 = Rs.5000). The same day an in-stock control
+    (amazon-shopping-voucher prid 586903) published availability
+    InStock, proving the vocabulary is live rather than a template.
+    """
+
+    @staticmethod
+    def _page(availability: str, price: int, sku: str = "698590") -> str:
+        return (
+            '<script type="application/ld+json">'
+            '{"@context":"https://www.schema.org","@type":"Product",'
+            '"name":"Sony PlayStation Instant Voucher",'
+            f'"sku":"{sku}",'
+            '"brand":{"@type":"Brand","name":"Sony PlayStation"},'
+            '"offers":{"@type":"Offer",'
+            f'"availability":"https://schema.org/{availability}",'
+            f'"price":{price},"priceCurrency":"INR",'
+            '"itemCondition":"https://schema.org/NewCondition"}}'
+            "</script>"
+        )
+
+    @staticmethod
+    def _run(html: str, denomination):
+        return core.extract_jsonld(
+            html, {"denomination": denomination, "extractor": "jsonld_offers"}
+        )
+
+    def test_out_of_stock_variant(self):
+        result = self._run(self._page("OutOfStock", 1000), 1000)
+        assert result["status"] == core.OUT_OF_STOCK
+        assert result["price"] == 1000.0
+
+    def test_in_stock_control(self):
+        result = self._run(self._page("InStock", 500, sku="586903"), 500)
+        assert result["status"] == core.IN_STOCK
+        assert result["price"] == 500.0
+
+    def test_other_variants_price_is_unknown_not_stockout(self):
+        """The Rs.2000 variant page must never satisfy a Rs.1000 entry."""
+        result = self._run(self._page("OutOfStock", 2000, sku="698593"), 1000)
+        assert result["status"] == core.UNKNOWN
+        assert "not among published offers" in result["note"]
+
+
 # =========================================================================== #
 # 7. observe() never raises
 # =========================================================================== #
