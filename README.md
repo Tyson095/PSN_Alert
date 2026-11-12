@@ -310,19 +310,17 @@ Safety rules that are enforced by the code, not by convention:
 | Retailer | Status | Notes |
 | --- | --- | --- |
 | **Rooter** (`shop.rooter.gg`) | ✅ **Enabled, verified** | Server-rendered Next.js page; `productData.baseVariations` carries all five variants with per-variant `outOfStock`, `sellPrice`, `proSellPrice` and cashback. `robots.txt` allows crawling. 5 entries enabled. |
-| **e2z Store** (`e2zstore.com`) | ✅ **Enabled, verified** | WooCommerce. Previously sat behind a Cloudflare managed challenge and returned 403; it now answers a plain GET with full HTML and no challenge header, so **no bypass is needed or used**. `robots.txt` says `Allow: /`. Stock lives in the CSS class on `<p class="stock ...">`, not the text. 6 entries enabled (Rs.1000–Rs.7000). |
+| **e2z Store** (`e2zstore.com`) | ✅ **Enabled, verified** | WooCommerce. Previously sat behind a Cloudflare managed challenge and returned 403; it now answers a plain GET with full HTML and no challenge header, so **no bypass is needed or used**. `robots.txt` says `Allow: /`. Stock lives in the CSS class on `<p class="stock ...">`, not the text. 6 entries enabled (Rs.1000–Rs.7000). **2026-11-12 update:** the managed challenge has returned on most product pages (403, `cf-mitigated: challenge`); those fetches fail and keep their last-known status — no bypass is attempted, and the entries recover when the site stops challenging. |
 | **StanShop** (`www.stanshop.co`) | ✅ **Enabled, verified** | Next.js App Router, no WooCommerce markup. Publishes per-denomination schema.org JSON-LD offers with a fixed availability vocabulary. `robots.txt` says `Allow: /`. 4 entries enabled (Rs.1000–Rs.4000); StanShop publishes no Rs.5000 card, so no entry exists for it. Note `store.getstan.app` returns HTTP 402 `DEPLOYMENT_DISABLED` and is dead. |
 | **Amazon India** | ❌ Disabled | Product/search pages return HTTP **503** to non-browser clients (bot protection). Needs the official **Creators API** (PA-API 5 is deprecated) plus Associates credentials. Do not attempt to bypass the blocking. |
 | **Games The Shop** | ❌ Disabled | Product data is fetched client-side from `/api/`, which `robots.txt` explicitly `Disallow`s. Re-verified 2026-11-12: the sitemap now lists 20 `/product/<uuid>` URLs, but all of them return the same data-less ~45 KB shell and the App Router RSC flight carries router metadata only — the server-rendered source still does not exist. Respect robots; needs an official feed/API. |
 | **Paytm** | ❌ Disabled | Search returns a generic marketing page; no server-rendered listings. |
 | **GYFTR** (`www.gyftr.com`) | ⏳ **Disabled, data path verified** | The PlayStation brand page is live (brand id 753, published), but its HTML is an empty Next.js shell: denominations, prices and a per-product `stock_left` count come from the site's own unauthenticated JSON feed (`api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation`), which answers a plain GET with the `Origin`/`Referer` its own JavaScript sends. Neither host's `robots.txt` restricts it; no cookie, credential or challenge is involved. The feed works (other brands return real stock counts) but currently returns **zero products** for PlayStation — and the site's own search returns "No Brands Found" — so no denomination can be verified. 5 entries configured (Rs.1000–Rs.5000, denominations unverified) and disabled; **the runner annotates every run once the feed lists products again**, which is the cue to verify and enable. |
-| **Woohoo** (`www.woohoo.in`) | ⏳ **Disabled, data path verified** | The product page is server-rendered and embeds `window.__INITIAL_STATE` with the offered slabs (`price.denominations` = Rs.1000–5000 for `sku B2CEGVGBPS001`, `upc.id` 7864) — but no stock field at all; the default slab display and the quantity limit are configuration, not stock. Stock comes from the site's own unauthenticated ledger `GET /proxy/locale/en-in/product/inventories?searchCriteria…entityId=<upc>`, whose direction is proven by the shipped bundle: returned rows land in `outOfStockDenominations` and cart items listed there are blocked ("Item is out of stock"), the selector switches away from a listed slab, and normally-purchasable control brands return an empty list. `robots.txt` disallows only `/en-in/`; no cookie, login or checkout is involved. Checked live 2026-11-12: **all five PlayStation slabs currently read OUT_OF_STOCK** (ledger rows dated 2026-11-05…09). 5 entries configured and disabled; the runner annotates each run while they stay disabled. |
+| **Woohoo** (`www.woohoo.in`) | ✅ **Enabled, verified** | The product page is server-rendered and embeds `window.__INITIAL_STATE` with the offered slabs (`price.denominations` = Rs.1000–5000 for `sku B2CEGVGBPS001`, `upc.id` 7864) — but no stock field at all; the default slab display and the quantity limit are configuration, not stock. Stock comes from the site's own unauthenticated ledger `GET /proxy/locale/en-in/product/inventories?searchCriteria…entityId=<upc>`, whose direction is proven by the shipped bundle: returned rows land in `outOfStockDenominations` and cart items listed there are blocked ("Item is out of stock"), the selector switches away from a listed slab, and normally-purchasable control brands return an empty list. `robots.txt` disallows only `/en-in/`; no cookie, login or checkout is involved. Checked live 2026-11-12: **all five PlayStation slabs currently read OUT_OF_STOCK** (ledger rows dated 2026-11-05…09). 5 entries enabled (Rs.1000–Rs.5000) after a dry-run confirmed real statuses; their first observation seeded baselines, so the first stock transition will alert. |
 
-**15 entries are enabled across 3 retailers** (Rooter 5, e2z 6, StanShop 4),
-all PlayStation only. GYFTR adds 5 configured entries that stay disabled
-until its feed actually lists PlayStation products, and Woohoo adds 5 whose
-page and ledger are verified but which stay disabled until a human runs the
-dry-run and flips them.
+**20 entries are enabled across 4 retailers** (Rooter 5, e2z 6, StanShop 4,
+Woohoo 5), all PlayStation only. GYFTR adds 5 configured entries that stay
+disabled until its feed actually lists PlayStation products.
 
 ### Why Cloudflare bypass tools are not used
 
@@ -362,26 +360,17 @@ test against the live page):
    confirm each entry reads a real status (not `UNKNOWN`), delete any
    denomination GYFTR does not actually list, and set `enabled: true`.
    An entry for a card GYFTR never sells would sit at `UNKNOWN` forever.
-5. **Woohoo** — page, slab list and inventory ledger are all verified (the
-   five entries read `OUT_OF_STOCK` today, so the runner already annotates
-   each run with
-   `woohoo-psn-1000: disabled entry now reads OUT_OF_STOCK -- verify ...`).
-   To enable: run `python github_runner.py --dry-run`, confirm every entry
-   reads a real status rather than `UNKNOWN`, and set `enabled: true` for
-   the denominations Woohoo still offers (its page lists Rs.1000–5000
-   today; delete any entry whose slab disappears — an unoffered slab is
-   UNKNOWN, not out of stock).
-6. For any page that lists several denominations at once, the selector must
+5. For any page that lists several denominations at once, the selector must
    be scoped to the exact denomination — otherwise "out of stock" for one
    variant can be read as stock for another.
 
-No working product URLs or selectors were invented. The 15 enabled entries
-(Rooter, e2z Store, StanShop) were each checked against the live page before
-`enabled: true` was set. GYFTR's feed URL was likewise checked and works, but
-its entries stay disabled because the brand currently lists no products to
-verify against. Woohoo's page and ledger were both checked live on
-2026-11-12 and agree with the shop's own cart logic, but its entries stay
-disabled until a human verifies them with the dry-run.
+No working product URLs or selectors were invented. The 20 enabled entries
+(Rooter, e2z Store, StanShop, Woohoo) were each checked against the live
+page before `enabled: true` was set. GYFTR's feed URL was likewise checked
+and works, but its entries stay disabled because the brand currently lists
+no products to verify against. Woohoo's page and ledger were both checked
+live on 2026-11-12 and agree with the shop's own cart logic; it was enabled
+only after the dry-run confirmed all five entries read a real status.
 
 ---
 
@@ -392,8 +381,8 @@ disabled until a human verifies them with the dry-run.
   One extra request per cycle re-checks disabled entries that still have a
   URL (GYFTR's five share a single feed URL), so the probe costs one
   request, not five. Woohoo costs **two** requests per cycle — the product
-  page and the inventory ledger — and both are shared by all five of its
-  entries, so its probe adds no further requests.
+  page and the inventory ledger — both shared by all five of its entries,
+  so enabling all five adds only those two requests.
 - No CAPTCHA solving, no authentication bypass, no anti-bot evasion. If a
   retailer blocks the bot or returns 429/403, the correct response is to slow
   down or disable that entry, not to work around it.
