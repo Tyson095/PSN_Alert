@@ -315,7 +315,7 @@
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
       "last_changed_at": "2026-11-13T19:05:20+05:30",
-      "last_error": "",
+      "last_error": "HTTPError: 500 Server Error: Internal Server Error for url: https://e2zstore.com/wp-json/wc/store/v1/products/rs-1000-playstation-network-wallet-top-up",
       "last_known_status": "IN_STOCK",
       "note": "",
       "price": 1000.0,
