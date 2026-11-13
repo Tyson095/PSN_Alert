@@ -1145,73 +1145,6 @@ def extract_wc_store_api(html: str, product: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-BLINKIT_STATE_MARKER = "window.grofers.PRELOADED_STATE ="
-
-
-def _blinkit_location_state(html: str) -> dict[str, Any] | None:
-    """Parse the delivery-location state Blinkit's server render embeds."""
-    index = html.find(BLINKIT_STATE_MARKER)
-    if index < 0:
-        return None
-    start = index + len(BLINKIT_STATE_MARKER)
-    try:
-        obj, _ = json.JSONDecoder().raw_decode(html[start:].lstrip())
-    except (ValueError, TypeError):
-        return None
-    return obj if isinstance(obj, dict) else None
-
-
-def extract_blinkit_jsonld(html: str, product: dict[str, Any]) -> dict[str, Any]:
-    """``jsonld_offers`` behind a delivery-location guard.
-
-    Blinkit renders availability for *one* delivery location: the server
-    render resolves a location first (IP-geolocated by default -- GitHub
-    runners land in Gurugram) and publishes an unservable or missing
-    location next to an ``OutOfStock`` offer. That is a statement about
-    delivery to a place, not a global fact about the product, so it must
-    never become a global ``OUT_OF_STOCK``: without a resolved and
-    serviceable location the only honest reading is ``UNKNOWN``.
-
-    When a location *is* resolved and serviceable, the JSON-LD availability
-    is read exactly as before -- still scoped to that resolved location,
-    which is documented as a limitation in ``products.yaml``.
-    """
-    state = _blinkit_location_state(html)
-    if state is None:
-        return {
-            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
-            "cashback": "", "error": "",
-            "note": "no delivery-location state in page; availability would "
-                    "be location-ambiguous",
-        }
-
-    data = state.get("data") if isinstance(state.get("data"), dict) else {}
-    location = (data.get("location")
-                if isinstance(data.get("location"), dict) else {})
-    coords = (location.get("coords")
-              if isinstance(location.get("coords"), dict) else {})
-    picker = (data.get("locationPicker")
-              if isinstance(data.get("locationPicker"), dict) else {})
-
-    if picker.get("isNonServiceable"):
-        return {
-            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
-            "cashback": "", "error": "",
-            "note": "delivery location is not serviceable; this is a "
-                    "location error, not a stock status",
-        }
-    if (not isinstance(coords.get("lat"), (int, float))
-            or not isinstance(coords.get("lon"), (int, float))):
-        return {
-            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
-            "cashback": "", "error": "",
-            "note": "no resolved delivery location in page; availability "
-                    "would be location-ambiguous",
-        }
-
-    return extract_jsonld(html, product)
-
-
 EXTRACTORS = {
     "rooter_rsc": extract_rooter,
     "html_text": extract_html,
@@ -1219,7 +1152,6 @@ EXTRACTORS = {
     "gyftr_api": extract_gyftr,
     "woohoo_api": extract_woohoo,
     "wc_store_api": extract_wc_store_api,
-    "blinkit_jsonld": extract_blinkit_jsonld,
 }
 
 

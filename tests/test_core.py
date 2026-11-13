@@ -822,55 +822,6 @@ class TestJsonLdExtractor:
         assert len(offers) == 2
 
 
-class TestBlinkitJsonLdShape:
-    """Blinkit publishes one server-rendered JSON-LD Product per variant URL.
-
-    Captured live 2026-11-12: the context is the rare
-    ``https://www.schema.org`` spelling, the offer is a bare dict with a
-    numeric price, and each denomination is its own URL (prid 698590 =
-    Rs.1000, ...698592 = Rs.5000). The same day an in-stock control
-    (amazon-shopping-voucher prid 586903) published availability
-    InStock, proving the vocabulary is live rather than a template.
-    """
-
-    @staticmethod
-    def _page(availability: str, price: int, sku: str = "698590") -> str:
-        return (
-            '<script type="application/ld+json">'
-            '{"@context":"https://www.schema.org","@type":"Product",'
-            '"name":"Sony PlayStation Instant Voucher",'
-            f'"sku":"{sku}",'
-            '"brand":{"@type":"Brand","name":"Sony PlayStation"},'
-            '"offers":{"@type":"Offer",'
-            f'"availability":"https://schema.org/{availability}",'
-            f'"price":{price},"priceCurrency":"INR",'
-            '"itemCondition":"https://schema.org/NewCondition"}}'
-            "</script>"
-        )
-
-    @staticmethod
-    def _run(html: str, denomination):
-        return core.extract_jsonld(
-            html, {"denomination": denomination, "extractor": "jsonld_offers"}
-        )
-
-    def test_out_of_stock_variant(self):
-        result = self._run(self._page("OutOfStock", 1000), 1000)
-        assert result["status"] == core.OUT_OF_STOCK
-        assert result["price"] == 1000.0
-
-    def test_in_stock_control(self):
-        result = self._run(self._page("InStock", 500, sku="586903"), 500)
-        assert result["status"] == core.IN_STOCK
-        assert result["price"] == 500.0
-
-    def test_other_variants_price_is_unknown_not_stockout(self):
-        """The Rs.2000 variant page must never satisfy a Rs.1000 entry."""
-        result = self._run(self._page("OutOfStock", 2000, sku="698593"), 1000)
-        assert result["status"] == core.UNKNOWN
-        assert "not among published offers" in result["note"]
-
-
 # =========================================================================== #
 # 7. observe() never raises
 # =========================================================================== #
@@ -2577,122 +2528,6 @@ class TestFetchRetry:
 
 
 # =========================================================================== #
-# Blinkit delivery-location guard
-# =========================================================================== #
-class TestBlinkitLocationGuard:
-    """Availability rendered for one delivery location is not global stock.
-
-    An unservable or missing location next to an OutOfStock offer is a
-    location error: it must read UNKNOWN, never OUT_OF_STOCK -- otherwise
-    a runner geolocated to the wrong city would broadcast a false
-    stockout and set up a false restock alert.
-    """
-
-    URL = ("https://blinkit.com/prn/sony-playstation-instant-voucher"
-           "/prid/698590")
-
-    @staticmethod
-    def _product(**overrides):
-        base = dict(
-            id="blinkit-psn-1000", retailer="Blinkit", denomination=1000,
-            url=TestBlinkitLocationGuard.URL, extractor="blinkit_jsonld",
-            enabled=False,
-        )
-        base.update(overrides)
-        return base
-
-    @staticmethod
-    def _page(availability="https://schema.org/OutOfStock", state=None,
-              include_state=True):
-        ld = json.dumps({
-            "@type": "Product",
-            "offers": {"@type": "Offer", "price": 1000,
-                       "availability": availability},
-        })
-        parts = [f'<script type="application/ld+json">{ld}</script>']
-        if include_state:
-            payload = ({"data": {
-                "location": {"coords": {"lat": 28.413333, "lon": 77.072833,
-                                        "locality": "Gurugram"}},
-                "locationPicker": {"isNonServiceable": False},
-            }} if state is None else state)
-            parts.append("<script>window.grofers.PRELOADED_STATE = "
-                         + json.dumps(payload) + ";</script>")
-        return "<html>" + "".join(parts) + "</html>"
-
-    @staticmethod
-    def _previous(status=core.IN_STOCK, price=1000.0):
-        return {
-            "status": status, "price": price, "discount": "", "cashback": "",
-            "last_error": "", "first_seen_at": T0, "last_changed_at": T0,
-            "baseline": True, "last_known_status": status, "note": "",
-        }
-
-    def test_registered_in_extractors(self):
-        assert (core.EXTRACTORS["blinkit_jsonld"]
-                is core.extract_blinkit_jsonld)
-
-    def test_serviceable_location_reads_jsonld_out_of_stock(self):
-        result = core.extract_blinkit_jsonld(self._page(), self._product())
-        assert result["status"] == core.OUT_OF_STOCK
-
-    def test_serviceable_location_reads_jsonld_in_stock(self):
-        result = core.extract_blinkit_jsonld(
-            self._page(availability="https://schema.org/InStock"),
-            self._product())
-        assert result["status"] == core.IN_STOCK
-
-    def test_non_serviceable_location_is_unknown_not_out_of_stock(self):
-        """Without the guard this very page reads OUT_OF_STOCK."""
-        state = {"data": {
-            "location": {"coords": {"lat": 28.4, "lon": 77.0}},
-            "locationPicker": {"isNonServiceable": True},
-        }}
-        page = self._page(state=state)
-        assert (core.extract_jsonld(page, self._product())["status"]
-                == core.OUT_OF_STOCK)      # the raw signal
-        result = core.extract_blinkit_jsonld(page, self._product())
-        assert result["status"] == core.UNKNOWN
-        assert "not serviceable" in result["note"]
-
-    def test_missing_location_coords_is_unknown(self):
-        state = {"data": {"location": {}, "locationPicker": {}}}
-        result = core.extract_blinkit_jsonld(self._page(state=state),
-                                              self._product())
-        assert result["status"] == core.UNKNOWN
-
-    def test_page_without_state_is_unknown(self):
-        result = core.extract_blinkit_jsonld(self._page(include_state=False),
-                                              self._product())
-        assert result["status"] == core.UNKNOWN
-
-    def test_truncated_state_is_unknown_not_out_of_stock(self):
-        ld = json.dumps({
-            "@type": "Product",
-            "offers": {"@type": "Offer", "price": 1000,
-                       "availability": "https://schema.org/OutOfStock"},
-        })
-        html = ('<script type="application/ld+json">' + ld + "</script>"
-                + '<script>window.grofers.PRELOADED_STATE = {"data": {'
-                + "</script>")
-        result = core.extract_blinkit_jsonld(html, self._product())
-        assert result["status"] == core.UNKNOWN
-
-    def test_guarded_read_never_becomes_out_of_stock_or_alerts(self):
-        state = {"data": {
-            "location": {"coords": {"lat": 28.4, "lon": 77.0}},
-            "locationPicker": {"isNonServiceable": True},
-        }}
-        result = core.extract_blinkit_jsonld(self._page(state=state),
-                                              self._product())
-        evaluation = core.evaluate(self._product(), self._previous(), result,
-                                   T1)
-        assert evaluation.alerts == []
-        assert evaluation.entry["status"] == core.UNKNOWN
-        assert evaluation.entry["last_known_status"] == core.IN_STOCK
-
-
-# =========================================================================== #
 # The committed products.yaml stays within the verified envelope
 # =========================================================================== #
 class TestRepositoryConfig:
@@ -2720,10 +2555,10 @@ class TestRepositoryConfig:
     def products(self):
         return core.load_products()
 
-    def test_configured_count_is_45(self, products):
-        # 40 original entries + the 5 Blinkit entries added in a4540f9 and
-        # kept configured (disabled) after the runner IP block was found.
-        assert len(products) == 45
+    def test_configured_count_is_40(self, products):
+        # The 40-entry baseline: Rooter, e2z Store, StanShop, Woohoo, GYFTR
+        # and the blocked-retailer placeholders.
+        assert len(products) == 40
 
     def test_enabled_count_is_20(self, products):
         assert len(core.enabled_products(products)) == 20
@@ -2750,15 +2585,6 @@ class TestRepositoryConfig:
             # The requested slug must be exactly the page's slug.
             assert url[len(prefix):] == p["url"].rstrip("/").rsplit("/", 1)[-1], \
                 p["id"]
-
-    def test_blinkit_entries_are_disabled_and_location_guarded(
-            self, products):
-        blinkit = [p for p in products if p["id"].startswith("blinkit-")]
-        assert len(blinkit) == 5
-        for p in blinkit:
-            assert p["enabled"] is False, p["id"]
-            assert p["extractor"] == "blinkit_jsonld", p["id"]
-            assert str(p["url"]).startswith("https://blinkit.com/"), p["id"]
 
     def test_blocked_retailers_stay_disabled(self, products):
         for p in products:

@@ -28,7 +28,7 @@ Detection logic is shared by both entry points in
 | `psn_gift_card_alert_bot/bot.py` | Optional local long-running process (pairing, `/status`) |
 | `psn_gift_card_alert_bot/config/products.yaml` | Product list; `enabled: true/false` |
 | `state/state.json` | Persisted observations and last report date (committed; contains no chat id) |
-| `tests/test_core.py` | 260 tests for state, transitions, dedup, extractors (incl. GYFTR's JSON feed, Woohoo's inventory ledger, Blinkit's per-variant JSON-LD and location guard, e2z's Store API fallback), bounded fetch retries, the enable-candidate signal, report totals, message splitting, chat-id isolation, repository config pins |
+| `tests/test_core.py` | 253 tests for state, transitions, dedup, extractors (incl. GYFTR's JSON feed, Woohoo's inventory ledger, e2z's Store API fallback), bounded fetch retries, the enable-candidate signal, report totals, message splitting, chat-id isolation, repository config pins |
 | `requirements.txt` | Runtime dependencies (canonical) |
 | `requirements-dev.txt` | Test dependencies (`pytest`) |
 
@@ -268,7 +268,7 @@ Edit `psn_gift_card_alert_bot/config/products.yaml`:
 | `retailer` / `denomination` | Labels used in alerts and reports |
 | `url` | Exact product/variant URL (for `gyftr_api`, the brand's JSON feed; for `woohoo_api`, the product page) |
 | `link` | Optional human-facing page used in alerts when `url` is a data feed |
-| `extractor` | `rooter_rsc`, `html_text`, `jsonld_offers`, `gyftr_api`, `woohoo_api`, `wc_store_api` or `blinkit_jsonld` |
+| `extractor` | `rooter_rsc`, `html_text`, `jsonld_offers`, `gyftr_api`, `woohoo_api` or `wc_store_api` |
 | `fallback` | Optional `{url, extractor}` source read **only** when the primary page fails (e2z reads the public Store API this way) |
 | `availability_selector` | CSS selector for the stock text of *that* variant |
 | `price_selector` | CSS selector for the price |
@@ -287,7 +287,6 @@ Edit `psn_gift_card_alert_bot/config/products.yaml`:
 | `gyftr_api` | The store serves stock from its own public JSON feed | GYFTR |
 | `woohoo_api` | The page lists what's offered and the store's own public ledger says what's sold out | Woohoo |
 | `wc_store_api` | The public Store API answers (catalogue list *or* single-product object); *present* with matching slug+price is a reading, *absent* is `UNKNOWN` (never a stockout) | e2z Store (fallback source) |
-| `blinkit_jsonld` | JSON-LD availability rendered for a single delivery location | Blinkit (behind its location guard) |
 
 `in_stock_classes` / `out_of_stock_classes` exist because some stores put the
 real signal in the element's class (`class="stock in-stock"`) while the visible
@@ -320,15 +319,11 @@ Safety rules that are enforced by the code, not by convention:
 | **Paytm** | ❌ Disabled | Search returns a generic marketing page; no server-rendered listings. |
 | **GYFTR** (`www.gyftr.com`) | ⏳ **Disabled, data path verified** | The PlayStation brand page is live (brand id 753, published), but its HTML is an empty Next.js shell: denominations, prices and a per-product `stock_left` count come from the site's own unauthenticated JSON feed (`api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation`), which answers a plain GET with the `Origin`/`Referer` its own JavaScript sends. Neither host's `robots.txt` restricts it; no cookie, credential or challenge is involved. The feed works (other brands return real stock counts) but currently returns **zero products** for PlayStation — and the site's own search returns "No Brands Found" — so no denomination can be verified. 5 entries configured (Rs.1000–Rs.5000, denominations unverified) and disabled; **the runner annotates every run once the feed lists products again**, which is the cue to verify and enable. |
 | **Woohoo** (`www.woohoo.in`) | ✅ **Enabled, verified** | The product page is server-rendered and embeds `window.__INITIAL_STATE` with the offered slabs (`price.denominations` = Rs.1000–5000 for `sku B2CEGVGBPS001`, `upc.id` 7864) — but no stock field at all; the default slab display and the quantity limit are configuration, not stock. Stock comes from the site's own unauthenticated ledger `GET /proxy/locale/en-in/product/inventories?searchCriteria…entityId=<upc>`, whose direction is proven by the shipped bundle: returned rows land in `outOfStockDenominations` and cart items listed there are blocked ("Item is out of stock"), the selector switches away from a listed slab, and normally-purchasable control brands return an empty list. `robots.txt` disallows only `/en-in/`; no cookie, login or checkout is involved. Checked live 2026-11-12: **all five PlayStation slabs currently read OUT_OF_STOCK** (ledger rows dated 2026-11-05…09). 5 entries enabled (Rs.1000–Rs.5000) after a dry-run confirmed real statuses; their first observation seeded baselines, so the first stock transition will alert. |
-| **Blinkit** (`blinkit.com`) | ❌ **Disabled (runner IP blocked)** | Data path verified 2026-11-12: the server-rendered page publishes schema.org JSON-LD `Product` with one `Offer` per variant URL — `sku` 698590/698593/698594/699135/698592 = Rs.1000–Rs.5000, a numeric `price`, availability in the fixed `schema.org/InStock`/`OutOfStock` vocabulary — plus a `window.grofers.PRELOADED_STATE` per-variant BFF list (`inventory`, `is_sold_out`) that agreed with the JSON-LD on every check. `robots.txt` allows `/prn/` product pages (it disallows `/cart`, `/checkout`, `/s/` search — none of which are used). Direction proven 2026-11-12 with an in-stock control (`amazon-shopping-voucher/prid/586903` publishes `InStock`); all five PSN variant URLs were fetched live the same day and read `OutOfStock` with correct sku and price. **Disabled 2026-11-13:** every one of the five URLs answers HTTP 403 from GitHub-hosted runners — persistent for 11+ hours across hundreds of attempts — while the identical URLs answer HTTP 200 from a residential IP: an IP/ASN-based block. Re-confirmed 2026-11-13 (evening): the latest completed runner run (4959) logs no probe annotation — the probe is still silent on failure, i.e. the runner still cannot read the URLs — while the same product URL answered HTTP 200 from the residential network minutes later. **No bypass is attempted** (no browser impersonation, no proxy, no auth, no CAPTCHA). The entries stay configured and disabled; the per-cycle probe re-checks them (one plain GET per URL, silent on failure) and annotates the run the moment they read a real status from an allowed network — that annotation is the cue to dry-run, verify and re-enable. Availability is also location-scoped (the SSR resolves one delivery location), so the `blinkit_jsonld` extractor returns `UNKNOWN` — never `OUT_OF_STOCK` — when no location is resolved or the location is not serviceable. **Third-party sources surveyed 2026-11-13 (none integrated; no account created, no service purchased):** Blinkit has no official/authorized public API (partner portals are seller/franchise channels, not data APIs). API.SH sells a Blinkit API (4 endpoints, explicit `in_stock` + `inventory` fields, location by latitude/longitude, 1 credit = $1/1,000 calls on monthly plans or $2 PAYG, 1,000 free credits/month, failed calls free, no rate limits — realistic monitoring cost roughly $15–50/month depending on cadence). Rewalto sells pin-code-scoped Blinkit stock readings (daily refresh, 1 credit per 10 readings, 1,000 free credits/month — cheap but only daily-fresh). Upscrape offers 8 Blinkit endpoints from 1.3 credits/product call with pincode location. RealDataAPI is contact-sales and runs residential proxies + CAPTCHA solving server-side, which this project's rules exclude regardless of price. Any integration awaits explicit approval after independent validation of the chosen provider's PSN listings and stock semantics. |
-| **Zepto** (`www.zeptonow.com`, `www.zepto.com`) | ❌ **Blocked, no extractor added** | `robots.txt` permits product pages on both domains (`zeptonow.com`: `Allow: /`; `zepto.com`: allows `/` while disallowing exactly the paths this project must never touch — `/search`, `/api/`, `/cart/`, `/account*`, `/order*`, `/buy/*`, `/location*`). Sells PSN gift cards: IGN India (2026-07-30) confirms Steam/PSN/Nintendo/Google Play digital cards in the Zepto app at ₹98–₹3,000 depending on platform and voucher — but **exact PSN denominations are unverified** (no indexed PSN product page was findable and the site itself is unreadable). Every plain GET — home, `sitemap.xml`, category pages, `/pn/<slug>/pvid/<uuid>` product pages, gift-card landing pages and the published terms — returns HTTP 202 with an empty body and `x-amzn-waf-action: challenge`: an AWS WAF CAPTCHA/JS challenge served before any page content exists, on both domains. There is nothing to parse, **the terms could not be read** (also WAF-challenged), and **no bypass is attempted** (no CAPTCHA solving, no challenge evasion, no disallowed paths accessed). Stock/dark-store location specificity could not be verified directly; third-party datasets (Rewalto sells Zepto stock *by pin code* with per-dark-store served pins) and community write-ups indicate stock is dark-store/pin-code specific, but that is indirect evidence only — and this bot has no configured Zepto delivery location. Community `zepto-scraper` packages were reviewed as reference only: they rely on Puppeteer browser automation or proxy/CAPTCHA services (e.g. Scrape.do), all excluded here. **Decision: no permitted, reliable stock source exists → no extractor, no entries.** A daily-refresh third-party API (Rewalto, 1 credit per 10 readings, 1,000 free credits/month) is a possible future avenue but needs an account (approval required) and independent verification that its catalogue covers PSN cards. |
 
 **20 entries are enabled across 4 retailers** (Rooter 5, e2z 6, StanShop 4,
-Woohoo 5), all PlayStation only. 45 entries are configured in total; the
-other 25 stay disabled (GYFTR 5, Games The Shop 5, Amazon 5, Paytm 5,
-Blinkit 5) until each data path can be read reliably from the runner.
-Zepto sells PSN cards too (IGN India, ₹98–₹3,000 range) but every page is
-blocked by an AWS WAF challenge and it has no entries at all; no third-party
+Woohoo 5), all PlayStation only. 40 entries are configured in total; the
+other 20 stay disabled (GYFTR 5, Games The Shop 5, Amazon 5, Paytm 5)
+until each data path can be read reliably from the runner. No third-party
 provider has been signed up for or paid for.
 
 ### Why Cloudflare bypass tools are not used
@@ -371,24 +366,7 @@ test against the live page):
    confirm each entry reads a real status (not `UNKNOWN`), delete any
    denomination GYFTR does not actually list, and set `enabled: true`.
    An entry for a card GYFTR never sells would sit at `UNKNOWN` forever.
-5. **Zepto** — blocked: every page (home, sitemap, category, product, terms)
-   returns an AWS WAF challenge (HTTP 202, `x-amzn-waf-action: challenge`,
-   empty body) on both domains. No bypass will be attempted; PSN cards are
-   confirmed to exist in the catalogue (IGN India, ₹98–₹3,000) but the
-   exact denominations and any stock field remain unverified. Re-check
-   later and add entries only if plain GETs start working — and only after
-   a delivery location is configured for the actual target store.
-6. **Blinkit** — configured and disabled since 2026-11-13: the runner's
-   IP receives HTTP 403 on all five variant URLs while other networks read
-   them fine (IP/ASN block, no bypass attempted; runner-side still blocked
-   as of run 4959, residential still 200). The per-cycle probe
-   annotates each run the moment the URLs read a real status from the
-   runner — that annotation is the cue to run `--dry-run`, confirm the
-   location-guarded extractor reads a real status (not `UNKNOWN`), and set
-   `enabled: true` again. Third-party APIs (API.SH, Rewalto, Upscrape) could
-   substitute but require an account and payment — approval first, then
-   independent validation of their PSN listings and stock fields.
-7. For any page that lists several denominations at once, the selector must
+5. For any page that lists several denominations at once, the selector must
    be scoped to the exact denomination — otherwise "out of stock" for one
    variant can be read as stock for another.
 
@@ -396,11 +374,7 @@ No working product URLs or selectors were invented. The 20 enabled entries
 (Rooter, e2z Store, StanShop, Woohoo) were each checked against
 the live page before `enabled: true` was set. GYFTR's feed URL was
 likewise checked and works, but its entries stay disabled because the
-brand currently lists no products to verify against. Blinkit's five
-variant URLs were each fetched live on 2026-11-12, their JSON-LD read
-back correctly, and the dry-run confirmed real statuses before enabling;
-they were disabled again on 2026-11-13 when the runner IP was found
-blocked (see the coverage table). e2z's fallback (the Store API
+brand currently lists no products to verify against. e2z's fallback (the Store API
 single-product route) was checked live on 2026-11-13 — unchallenged 200
 JSON for all six wallet products with explicit stock fields, agreeing with
 the pages' JSON-LD and the catalogue on every control — and is only read
@@ -419,9 +393,8 @@ after the dry-run confirmed all five entries read a real status.
   is never asked twice in a cycle. Transient faults (timeouts, connection
   resets, HTTP 5xx) get at most one extra attempt with a small backoff;
   HTTP 403/429 and other 4xx answers are final and are never retried. The
-  per-cycle probe of disabled entries that still have a URL costs six
-  requests (GYFTR's five entries share one feed URL; Blinkit's five disabled
-  entries use one URL each). Woohoo costs **two** requests
+  per-cycle probe of disabled entries that still have a URL costs one
+  request (GYFTR's five entries share one feed URL). Woohoo costs **two** requests
   per cycle — the product page and the inventory ledger — both shared by
   all five of its entries.
 - No CAPTCHA solving, no authentication bypass, no anti-bot evasion. If a
@@ -439,13 +412,10 @@ python -m pytest
 ```
 
 Covers state persistence, stock transitions (including
-`OUT → UNKNOWN → IN`), price drops, duplicate suppression, the seven extractors
+`OUT → UNKNOWN → IN`), price drops, duplicate suppression, the six extractors
 (`rooter_rsc`, `html_text`, `jsonld_offers`, `gyftr_api`, `woohoo_api`,
-`wc_store_api`, `blinkit_jsonld`),
-class-based availability, Blinkit's per-variant JSON-LD shape (numeric
-price, `www.schema.org` context, wrong denomination → `UNKNOWN`) and its
-delivery-location guard (missing or unservable location → `UNKNOWN`,
-never `OUT_OF_STOCK`), the e2z Store API fallback (read only after the
+`wc_store_api`),
+class-based availability, the e2z Store API fallback (read only after the
 primary page fails; both payload shapes; absent → `UNKNOWN` never
 `OUT_OF_STOCK`; a cached primary
 failure is replayed instead of re-asking the endpoint), bounded fetch
@@ -454,7 +424,7 @@ extra attempt), safety rules (unknown never counts as
 in/out of stock), the enable-candidate re-check (disabled entries with a URL
 warn the run once they read a real status), Woohoo's ledger failure modes
 (missing stock field, partial reply, fetch failure, unoffered slab,
-per-cycle request sharing), the repository config pins (45 configured / 20
+per-cycle request sharing), the repository config pins (40 configured / 20
 enabled, exact enabled set), report scheduling, money parsing and token
 scrubbing.
 
