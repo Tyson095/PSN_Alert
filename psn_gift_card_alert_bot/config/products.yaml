@@ -111,12 +111,44 @@ products:
   # The JSON-LD is wrapped in a "@graph" node (WordPress SEO plugin), so the
   # extractor walks the whole tree rather than only the top level.
   #
+  # 2026-11-13 UPDATE -- per-URL challenge, plus a Store API fallback source.
+  # Since 2026-11-11 14:06 IST five of the six product pages answer 403 with
+  # "cf-mitigated: challenge" (Cloudflare managed challenge), from the GitHub
+  # runner AND from a residential IP alike, while the Rs.7000 page still
+  # answers 200 -- a per-URL rule, not an IP block. Failed reads keep their
+  # last-known status; no bypass of any kind is attempted.
+  #
+  # FALLBACK SOURCE -- read ONLY when the primary page fetch or parse fails:
+  #   https://e2zstore.com/wp-json/wc/store/v1/products?slug=<page slug>
+  # robots.txt is "User-agent: * / Allow: /" with no /wp-json/ disallow, and
+  # the endpoint answers plain GETs with unchallenged 200 JSON (verified
+  # 2026-11-13 from both networks). It carries real stock fields
+  # (is_in_stock, is_purchasable) that agreed with the pages' JSON-LD on
+  # every sample: 2/2 listed products matched their pages, and 8/8 sampled
+  # products absent from the listing read schema.org/OutOfStock on their
+  # readable pages. The store excludes out-of-stock products from the
+  # catalogue query -- all 2762 listed products read is_in_stock: true --
+  # so the extractor treats "listed with matching slug and price" as a
+  # reading and "absent" as UNKNOWN. Absence is NEVER OUT_OF_STOCK: a
+  # renamed, hidden or restructured product must not fake a stockout (and
+  # therefore must not fake a restock either).
+  #
+  # Known limitation: an entry last witnessed IN_STOCK before the challenge
+  # reads UNKNOWN while the store hides it from the catalogue; its next
+  # restock updates the report but cannot alert until an OUT_OF_STOCK has
+  # been witnessed (the state file shows which entries those are). If the
+  # pages stop being challenged, the primary JSON-LD read resumes and full
+  # transition alerting is restored.
+  #
   # First run records a baseline and alerts nothing, by design.
   - id: e2z-psn-1000
     retailer: e2z Store
     denomination: 1000
     url: https://e2zstore.com/product/rs-1000-playstation-network-wallet-top-up/
     extractor: jsonld_offers
+    fallback:
+      url: https://e2zstore.com/wp-json/wc/store/v1/products?slug=rs-1000-playstation-network-wallet-top-up
+      extractor: wc_store_api
     enabled: true
     verification: verified-2026-11-09
 
@@ -125,6 +157,9 @@ products:
     denomination: 2000
     url: https://e2zstore.com/product/rs-2000-playstation-network-wallet-top-up/
     extractor: jsonld_offers
+    fallback:
+      url: https://e2zstore.com/wp-json/wc/store/v1/products?slug=rs-2000-playstation-network-wallet-top-up
+      extractor: wc_store_api
     enabled: true
     verification: verified-2026-11-09
 
@@ -133,6 +168,9 @@ products:
     denomination: 3000
     url: https://e2zstore.com/product/rs-3000-playstation-network-wallet-top-up/
     extractor: jsonld_offers
+    fallback:
+      url: https://e2zstore.com/wp-json/wc/store/v1/products?slug=rs-3000-playstation-network-wallet-top-up
+      extractor: wc_store_api
     enabled: true
     verification: verified-2026-11-09
 
@@ -141,6 +179,9 @@ products:
     denomination: 4000
     url: https://e2zstore.com/product/rs-4000-playstation-network-wallet-top-up/
     extractor: jsonld_offers
+    fallback:
+      url: https://e2zstore.com/wp-json/wc/store/v1/products?slug=rs-4000-playstation-network-wallet-top-up
+      extractor: wc_store_api
     enabled: true
     verification: verified-2026-11-09
 
@@ -149,6 +190,9 @@ products:
     denomination: 5000
     url: https://e2zstore.com/product/rs-5000-playstation-store-gift-card-wallet-top-up/
     extractor: jsonld_offers
+    fallback:
+      url: https://e2zstore.com/wp-json/wc/store/v1/products?slug=rs-5000-playstation-store-gift-card-wallet-top-up
+      extractor: wc_store_api
     enabled: true
     verification: verified-2026-11-09
 
@@ -161,6 +205,9 @@ products:
     denomination: 7000
     url: https://e2zstore.com/product/rs-7000-sony-playstation-store-gift-card-wallet-top-up/
     extractor: jsonld_offers
+    fallback:
+      url: https://e2zstore.com/wp-json/wc/store/v1/products?slug=rs-7000-sony-playstation-store-gift-card-wallet-top-up
+      extractor: wc_store_api
     enabled: true
     verification: verified-2026-11-09
     notes: "Verified reachable and readable; Rs.7000 is outside the originally requested 1000-5000 range."
@@ -649,7 +696,8 @@ products:
     notes: "Same as woohoo-psn-1000."
 
   # ------------------------------------------------------------------ #
-  # Blinkit (blinkit.com) - DATA PATH VERIFIED AND ENABLED 2026-11-12.
+  # Blinkit (blinkit.com) - DATA PATH VERIFIED 2026-11-12;
+  # DISABLED 2026-11-13 (runner IP blocked; see below).
   #
   # Sells the Sony PlayStation Instant Voucher in five denominations.
   # robots.txt allows /prn/ product pages (it disallows /cart, /checkout,
@@ -661,9 +709,10 @@ products:
   #              "availability":"https://schema.org/OutOfStock",
   #              "price":1000,"priceCurrency":"INR"}}
   #
-  # That is the same fixed availability vocabulary jsonld_offers already
-  # reads for StanShop and e2z, so no new extractor is needed: the offer
-  # price must equal the configured denomination, otherwise UNKNOWN.
+  # That is the same fixed availability vocabulary jsonld_offers reads for
+  # StanShop and e2z: the offer price must equal the configured
+  # denomination, otherwise UNKNOWN. It is read through blinkit_jsonld,
+  # which wraps jsonld_offers in a delivery-location guard (below).
   # The page also embeds window.grofers.PRELOADED_STATE whose PDP snippets
   # carry a per-variant list (product_id, mrp/price, inventory,
   # is_sold_out); JSON-LD and BFF agreed on every check so far.
@@ -681,58 +730,76 @@ products:
   # amazon-shopping-voucher/prid/586903 publishes availability InStock, so
   # InStock/OutOfStock are live values, not a static template.
   #
-  # Caveat: SSR renders a default delivery location - stock can differ
-  # per address, so treat an alert as "check the link", not a guarantee.
+  # WHY DISABLED 2026-11-13: from GitHub-hosted runners every one of the
+  # five URLs answers HTTP 403 - persistent for 11+ hours across hundreds
+  # of attempts (~60 runs), while the identical URLs answer HTTP 200 from
+  # a residential IP. That is an IP/ASN-based block, not a page change.
+  # No bypass is attempted (no browser impersonation, no proxy, no auth,
+  # no CAPTCHA). The entries stay configured and disabled; the per-cycle
+  # probe still re-checks them (one plain GET per URL, silent on failure)
+  # and will annotate the run the moment they read a real stock status
+  # from an allowed network - that annotation is the cue to dry-run,
+  # verify, and set enabled: true again.
+  #
+  # LOCATION GUARD (blinkit_jsonld): availability is rendered for ONE
+  # delivery location. The SSR resolves a location first - IP-geolocated
+  # by default; the runner's page resolved Gurugram coordinates with an
+  # empty address book - and an unservable or missing location can sit
+  # next to an OutOfStock offer. A location/serviceability error is not a
+  # global stock fact: when isNonServiceable is set, or no coordinates
+  # were resolved, the extractor returns UNKNOWN, never OUT_OF_STOCK.
+  # With a resolved serviceable location the JSON-LD is read as before -
+  # still scoped to that location, so treat an alert as "check the link".
   # Every fetch is one plain GET with the standard browser UA: no cookie,
   # login, cart or challenge involved.
   #
-  # Enabled 2026-11-12 after python github_runner.py --dry-run read
-  # OUT_OF_STOCK (a real status, not UNKNOWN) on all five entries; the
-  # first observation seeds baselines and the first stock transition alerts.
+  # Verified 2026-11-12 with python github_runner.py --dry-run reading
+  # OUT_OF_STOCK (a real status, not UNKNOWN) on all five entries; state
+  # entries are preserved as-is while disabled.
   - id: blinkit-psn-1000
     retailer: Blinkit
     denomination: 1000
     url: https://blinkit.com/prn/sony-playstation-instant-voucher/prid/698590
-    extractor: jsonld_offers
-    enabled: true
+    extractor: blinkit_jsonld
+    enabled: false
     verification: verified-2026-11-12
-    notes: "JSON-LD sku 698590, price 1000, OutOfStock on 2026-11-12; control publishes InStock. Enabled 2026-11-12 after dry-run."
+    notes: "JSON-LD sku 698590, price 1000, OutOfStock on 2026-11-12; control publishes InStock. Disabled 2026-11-13: GitHub runners receive HTTP 403 (IP-based block); no bypass attempted."
 
   - id: blinkit-psn-2000
     retailer: Blinkit
     denomination: 2000
     url: https://blinkit.com/prn/x/prid/698593
-    extractor: jsonld_offers
-    enabled: true
+    extractor: blinkit_jsonld
+    enabled: false
     verification: verified-2026-11-12
-    notes: "JSON-LD sku 698593, price 2000, OutOfStock on 2026-11-12. Enabled 2026-11-12 after dry-run."
+    notes: "JSON-LD sku 698593, price 2000, OutOfStock on 2026-11-12. Disabled 2026-11-13: runner IP blocked (HTTP 403)."
 
   - id: blinkit-psn-3000
     retailer: Blinkit
     denomination: 3000
     url: https://blinkit.com/prn/x/prid/698594
-    extractor: jsonld_offers
-    enabled: true
+    extractor: blinkit_jsonld
+    enabled: false
     verification: verified-2026-11-12
-    notes: "JSON-LD sku 698594, price 3000, OutOfStock on 2026-11-12. Enabled 2026-11-12 after dry-run."
+    notes: "JSON-LD sku 698594, price 3000, OutOfStock on 2026-11-12. Disabled 2026-11-13: runner IP blocked (HTTP 403)."
 
   - id: blinkit-psn-4000
     retailer: Blinkit
     denomination: 4000
     url: https://blinkit.com/prn/x/prid/699135
-    extractor: jsonld_offers
-    enabled: true
+    extractor: blinkit_jsonld
+    enabled: false
     verification: verified-2026-11-12
-    notes: "JSON-LD sku 699135, price 4000, OutOfStock on 2026-11-12. Enabled 2026-11-12 after dry-run."
+    notes: "JSON-LD sku 699135, price 4000, OutOfStock on 2026-11-12. Disabled 2026-11-13: runner IP blocked (HTTP 403)."
 
   - id: blinkit-psn-5000
     retailer: Blinkit
     denomination: 5000
     url: https://blinkit.com/prn/x/prid/698592
-    extractor: jsonld_offers
-    enabled: true
+    extractor: blinkit_jsonld
+    enabled: false
     verification: verified-2026-11-12
-    notes: "JSON-LD sku 698592, price 5000, OutOfStock on 2026-11-12. Enabled 2026-11-12 after dry-run."
+    notes: "JSON-LD sku 698592, price 5000, OutOfStock on 2026-11-12. Disabled 2026-11-13: runner IP blocked (HTTP 403)."
 
   # ------------------------------------------------------------------ #
   # Zepto - BLOCKED 2026-11-12, no entries configured.

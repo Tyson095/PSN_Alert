@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import re
 import time
 from dataclasses import dataclass, field
@@ -1023,12 +1024,177 @@ def extract_woohoo(html: str, product: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def extract_wc_store_api(html: str, product: dict[str, Any]) -> dict[str, Any]:
+    """Read one denomination from a WooCommerce Store API product listing.
+
+    The public storefront endpoint (``/wp-json/wc/store/v1/products?slug=…``)
+    answers with a JSON array containing **only the products the catalogue
+    query lists**. On the store that publishes it, out-of-stock products are
+    excluded from that query -- verified 2026-11-13: all 2762 listed products
+    read ``is_in_stock: true``, while 8 of 8 sampled sitemap products absent
+    from the listing read ``schema.org/OutOfStock`` on their readable pages,
+    and the two sampled listed products agreed with their pages' JSON-LD.
+
+    That yields three answer shapes, and only two are stock facts:
+
+    * listed with ``is_in_stock: true`` *and* ``is_purchasable: true`` (and a
+      price matching the configured denomination) -> ``IN_STOCK``;
+    * listed with ``is_in_stock: false`` -> ``OUT_OF_STOCK``: an explicit
+      stock field, not an absence;
+    * **not listed** -> ``UNKNOWN``. Absence is never ``OUT_OF_STOCK``: a
+      product can also be missing because it was renamed, hidden, or the
+      payload changed, and misreading that as a stockout is exactly the
+      failure the monitoring rules forbid.
+
+    The slug is derived from the configured page URL so an exact match ties
+    the response to this denomination, and the price (the Store API reports
+    paise) must equal the configured value before any status is believed.
+    """
+    try:
+        data = json.loads(html)
+    except (ValueError, TypeError) as exc:
+        raise ExtractionError(
+            f"Store API response is not valid JSON: {exc}") from exc
+    if not isinstance(data, list):
+        raise ExtractionError(
+            f"unexpected Store API payload: {type(data).__name__}, expected list")
+
+    path = urlparse(str(product.get("url") or "")).path.rstrip("/")
+    expected = path.rsplit("/", 1)[-1] if path else ""
+    if not expected:
+        raise ExtractionError("cannot derive product slug from the configured url")
+
+    match = next((item for item in data
+                  if isinstance(item, dict) and item.get("slug") == expected),
+                 None)
+    if match is None:
+        return {
+            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+            "cashback": "", "error": "",
+            "note": "not in the public catalogue; the store excludes "
+                    "out-of-stock products, so absence claims no stock",
+        }
+
+    prices = match.get("prices") if isinstance(match.get("prices"), dict) else {}
+    price: float | None
+    try:
+        price = float(prices.get("price")) / 100.0  # Store API prices are paise
+    except (TypeError, ValueError):
+        price = None
+
+    denomination = product.get("denomination")
+    if denomination is not None:
+        if price is None:
+            return {
+                "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+                "cashback": "", "error": "",
+                "note": "listed without a usable price; refusing to claim a status",
+            }
+        try:
+            matches_denomination = price == float(denomination)
+        except (TypeError, ValueError):
+            matches_denomination = False
+        if not matches_denomination:
+            return {
+                "ok": True, "status": UNKNOWN, "price": price, "discount": "",
+                "cashback": "", "error": "",
+                "note": (f"listed price {price:,.0f} does not match the "
+                         f"configured denomination {denomination}"),
+            }
+
+    in_stock = match.get("is_in_stock")
+    purchasable = match.get("is_purchasable")
+    if in_stock is True and purchasable is True:
+        status = IN_STOCK
+    elif in_stock is False:
+        # An explicit stock field on the exact product: a real reading.
+        status = OUT_OF_STOCK
+    else:
+        # Missing stock field, or "in stock" without purchasability: neither
+        # half alone means "buy it now", and nothing here means "sold out".
+        status = UNKNOWN
+
+    return {
+        "ok": True, "status": status, "price": price, "discount": "",
+        "cashback": "", "error": "", "note": "",
+    }
+
+
+BLINKIT_STATE_MARKER = "window.grofers.PRELOADED_STATE ="
+
+
+def _blinkit_location_state(html: str) -> dict[str, Any] | None:
+    """Parse the delivery-location state Blinkit's server render embeds."""
+    index = html.find(BLINKIT_STATE_MARKER)
+    if index < 0:
+        return None
+    start = index + len(BLINKIT_STATE_MARKER)
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(html[start:].lstrip())
+    except (ValueError, TypeError):
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def extract_blinkit_jsonld(html: str, product: dict[str, Any]) -> dict[str, Any]:
+    """``jsonld_offers`` behind a delivery-location guard.
+
+    Blinkit renders availability for *one* delivery location: the server
+    render resolves a location first (IP-geolocated by default -- GitHub
+    runners land in Gurugram) and publishes an unservable or missing
+    location next to an ``OutOfStock`` offer. That is a statement about
+    delivery to a place, not a global fact about the product, so it must
+    never become a global ``OUT_OF_STOCK``: without a resolved and
+    serviceable location the only honest reading is ``UNKNOWN``.
+
+    When a location *is* resolved and serviceable, the JSON-LD availability
+    is read exactly as before -- still scoped to that resolved location,
+    which is documented as a limitation in ``products.yaml``.
+    """
+    state = _blinkit_location_state(html)
+    if state is None:
+        return {
+            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+            "cashback": "", "error": "",
+            "note": "no delivery-location state in page; availability would "
+                    "be location-ambiguous",
+        }
+
+    data = state.get("data") if isinstance(state.get("data"), dict) else {}
+    location = (data.get("location")
+                if isinstance(data.get("location"), dict) else {})
+    coords = (location.get("coords")
+              if isinstance(location.get("coords"), dict) else {})
+    picker = (data.get("locationPicker")
+              if isinstance(data.get("locationPicker"), dict) else {})
+
+    if picker.get("isNonServiceable"):
+        return {
+            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+            "cashback": "", "error": "",
+            "note": "delivery location is not serviceable; this is a "
+                    "location error, not a stock status",
+        }
+    if (not isinstance(coords.get("lat"), (int, float))
+            or not isinstance(coords.get("lon"), (int, float))):
+        return {
+            "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+            "cashback": "", "error": "",
+            "note": "no resolved delivery location in page; availability "
+                    "would be location-ambiguous",
+        }
+
+    return extract_jsonld(html, product)
+
+
 EXTRACTORS = {
     "rooter_rsc": extract_rooter,
     "html_text": extract_html,
     "jsonld_offers": extract_jsonld,
     "gyftr_api": extract_gyftr,
     "woohoo_api": extract_woohoo,
+    "wc_store_api": extract_wc_store_api,
+    "blinkit_jsonld": extract_blinkit_jsonld,
 }
 
 
@@ -1056,16 +1222,64 @@ def _headers_for(url: str) -> dict[str, str]:
     return headers
 
 
-def fetch_html(url: str, timeout: float = 30.0, session: requests.Session | None = None) -> str:
+#: Extra attempts allowed for a *transient* failure (see :func:`fetch_html`).
+#: Access denials are never retried: re-asking a server that just answered
+#: 403/429 is precisely the behaviour the monitoring rules forbid.
+FETCH_RETRY_ATTEMPTS = 1
+#: Base pause between attempts, in seconds. Tests set this to 0 so the suite
+#: never sleeps; a little jitter keeps retries off a fixed metronome.
+FETCH_RETRY_BACKOFF = 1.0
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """True only for faults that a second attempt can plausibly fix.
+
+    Connection resets, read timeouts and HTTP 5xx are transient. HTTP 4xx
+    -- 403 and 429 especially -- is a decision, not a glitch: it is
+    returned as-is, once, and surfaces as a failed observation that can
+    never become a stock status.
+    """
+    if isinstance(exc, (requests.Timeout, requests.ConnectionError,
+                        ConnectionError)):
+        return True
+    if isinstance(exc, requests.HTTPError):
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        return isinstance(status, int) and status >= 500
+    return False
+
+
+def fetch_html(url: str, timeout: float = 30.0,
+               session: requests.Session | None = None,
+               retries: int | None = None) -> str:
     """GET a product page. Raises on HTTP/network failure.
 
-    Deliberately performs a single plain request: no headless browser, no
-    cookie jar, no CAPTCHA handling, no anti-bot circumvention.
+    Deliberately performs a plain request: no headless browser, no cookie
+    jar, no CAPTCHA handling, no anti-bot circumvention.
+
+    ``retries`` bounds the number of *extra* attempts (default
+    :data:`FETCH_RETRY_ATTEMPTS`) and applies only to transient faults --
+    connection errors, timeouts and HTTP 5xx. HTTP 403, 429 and other 4xx
+    answers are final and are never re-asked. When attempts are exhausted
+    the original exception propagates, so callers record a failure and the
+    previous stock status is preserved.
     """
     client = session or requests
-    response = client.get(url, headers=_headers_for(url), timeout=timeout)
-    response.raise_for_status()
-    return response.text
+    attempts = FETCH_RETRY_ATTEMPTS if retries is None else max(0, retries)
+    while True:
+        try:
+            response = client.get(url, headers=_headers_for(url),
+                                  timeout=timeout)
+            response.raise_for_status()
+            return response.text
+        except Exception as exc:  # noqa: BLE001 - classified, then re-raised
+            if not _is_retryable(exc):
+                raise
+            attempts -= 1
+            if attempts < 0:
+                raise
+            if FETCH_RETRY_BACKOFF > 0:
+                time.sleep(FETCH_RETRY_BACKOFF
+                           + random.uniform(0.0, FETCH_RETRY_BACKOFF * 0.25))
 
 
 def fetch_failed_observation(exc: BaseException) -> dict[str, Any]:
@@ -1081,9 +1295,59 @@ def fetch_failed_observation(exc: BaseException) -> dict[str, Any]:
     }
 
 
+def _fallback_observation(product: dict[str, Any], primary_error: BaseException,
+                          session: requests.Session | None) -> dict[str, Any]:
+    """Read a product through its configured secondary source.
+
+    Used only when the primary page could not be read (fetch *or* parse).
+    A product without a ``fallback`` behaves exactly as before -- the
+    primary failure is reported verbatim -- so failure preservation for
+    every other integration is untouched. The fallback is attempted at
+    most once per cycle: the runner caches the primary failure, and
+    replays it through this function instead of re-asking the endpoint
+    that just refused us.
+    """
+    fallback = product.get("fallback")
+    if not isinstance(fallback, dict):
+        return fetch_failed_observation(primary_error)
+
+    url = fallback.get("url")
+    name = fallback.get("extractor") or product.get("extractor", "html_text")
+    if not url:
+        return {
+            "ok": False, "status": None, "price": None, "discount": "",
+            "cashback": "", "error": "fallback config has no url", "note": "",
+        }
+    extractor = EXTRACTORS.get(str(name))
+    if extractor is None:
+        return {
+            "ok": False, "status": None, "price": None, "discount": "",
+            "cashback": "", "error": f"unknown fallback extractor: {name}",
+            "note": "",
+        }
+    try:
+        page = fetch_html(str(url), session=session)
+        result = extractor(page, product)
+        result.setdefault("ok", True)
+        result.setdefault("error", "")
+        result.setdefault("note", "")
+        return result
+    except Exception as exc:  # noqa: BLE001 - one product must never kill the run
+        log.warning("Fallback read failed for %s: %s",
+                    product.get("id"), type(exc).__name__)
+        return fetch_failed_observation(exc)
+
+
 def observe(product: dict[str, Any], html: str | None = None,
-            session: requests.Session | None = None) -> dict[str, Any]:
-    """Return an observation for a product. Never raises."""
+            session: requests.Session | None = None,
+            primary_error: BaseException | None = None) -> dict[str, Any]:
+    """Return an observation for a product. Never raises.
+
+    ``primary_error`` carries a failure that already happened this cycle
+    (the runner caches one fetch per URL), so a configured fallback source
+    gets its turn without re-asking the primary endpoint -- which matters
+    because re-asking a 403 is exactly what the request rules forbid.
+    """
     extractor_name = product.get("extractor", "html_text")
     extractor = EXTRACTORS.get(extractor_name)
     if extractor is None:
@@ -1097,6 +1361,8 @@ def observe(product: dict[str, Any], html: str | None = None,
             "ok": False, "status": None, "price": None, "discount": "",
             "cashback": "", "error": "product has no url", "note": "",
         }
+    if primary_error is not None:
+        return _fallback_observation(product, primary_error, session)
     try:
         page = html if html is not None else fetch_html(url, session=session)
         result = extractor(page, product)
@@ -1106,6 +1372,10 @@ def observe(product: dict[str, Any], html: str | None = None,
         return result
     except Exception as exc:  # noqa: BLE001 - one product must never kill the run
         log.warning("Fetch/parse failed for %s: %s", product.get("id"), type(exc).__name__)
+        if isinstance(product.get("fallback"), dict):
+            log.info("Primary source failed for %s; reading the configured "
+                     "fallback source", product.get("id"))
+            return _fallback_observation(product, exc, session)
         return fetch_failed_observation(exc)
 
 

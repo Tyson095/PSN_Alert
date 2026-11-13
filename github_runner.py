@@ -108,6 +108,11 @@ def observe_cached(product: dict, cache: dict[str, str | BaseException]) -> tupl
     matters because a hanging host costs a full timeout per attempt, so
     retrying per product would multiply a stalled cycle by the number of
     products sharing that URL.
+
+    A cached failure is replayed through ``observe`` as ``primary_error``
+    rather than converted straight to a failed observation, so a product
+    with a configured fallback source reads it exactly once per cycle --
+    without re-asking the primary endpoint that just failed.
     """
     url = str(product.get("url") or "")
     if not url:
@@ -124,7 +129,7 @@ def observe_cached(product: dict, cache: dict[str, str | BaseException]) -> tupl
 
     cached = cache[url]
     if isinstance(cached, BaseException):
-        return core.fetch_failed_observation(cached), fetched
+        return core.observe(product, primary_error=cached), fetched
     return core.observe(product, html=cached), fetched
 
 

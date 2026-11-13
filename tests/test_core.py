@@ -50,6 +50,12 @@ def observation(status=core.IN_STOCK, price=985.0, discount="", cashback="",
     }
 
 
+@pytest.fixture(autouse=True)
+def _no_retry_sleep(monkeypatch):
+    """Zero the retry backoff so failure tests never sleep for real."""
+    monkeypatch.setattr(core, "FETCH_RETRY_BACKOFF", 0.0)
+
+
 # =========================================================================== #
 # 1. State persistence
 # =========================================================================== #
@@ -2167,3 +2173,561 @@ class TestEnableCandidates:
             ConnectionError("boom"), monkeypatch)
         assert messages == [] and warnings == []
         assert isinstance(cache[self.FEED], ConnectionError)
+
+
+# =========================================================================== #
+# WooCommerce Store API fallback source (e2z)
+# =========================================================================== #
+class TestWcStoreApiExtractor:
+    """The public Store API answers with *listed* products only.
+
+    Listed with explicit stock fields = a reading. Absent = UNKNOWN, never
+    OUT_OF_STOCK: this store hides out-of-stock products from the
+    catalogue query, so absence is ambiguous by construction and must not
+    be promoted into a stockout (which could then fake a restock).
+    """
+
+    PAGE = ("https://e2zstore.com/product/"
+            "rs-1000-playstation-network-wallet-top-up/")
+
+    @staticmethod
+    def _product(**overrides):
+        base = dict(
+            id="e2z-psn-1000", retailer="e2z Store", denomination=1000,
+            url=TestWcStoreApiExtractor.PAGE, extractor="wc_store_api",
+            enabled=True,
+        )
+        base.update(overrides)
+        return base
+
+    @staticmethod
+    def _listed(slug="rs-1000-playstation-network-wallet-top-up",
+                price="100000", in_stock=True, purchasable=True, omit=()):
+        item = {
+            "slug": slug,
+            "is_in_stock": in_stock,
+            "is_purchasable": purchasable,
+            "prices": {"price": price, "currency_code": "INR"},
+        }
+        for key in omit:
+            item.pop(key, None)
+        return item
+
+    @staticmethod
+    def _previous(status=core.OUT_OF_STOCK, price=1000.0):
+        return {
+            "status": status, "price": price, "discount": "", "cashback": "",
+            "last_error": "", "first_seen_at": T0, "last_changed_at": T0,
+            "baseline": True, "last_known_status": status, "note": "",
+        }
+
+    def test_registered_in_extractors(self):
+        assert core.EXTRACTORS["wc_store_api"] is core.extract_wc_store_api
+
+    def test_listed_in_stock_is_in_stock(self):
+        result = core.extract_wc_store_api(json.dumps([self._listed()]),
+                                           self._product())
+        assert result["ok"] is True
+        assert result["status"] == core.IN_STOCK
+        assert result["price"] == 1000.0
+
+    def test_listed_with_explicit_false_stock_is_out_of_stock(self):
+        """An explicit stock field is a reading -- unlike an absence."""
+        result = core.extract_wc_store_api(
+            json.dumps([self._listed(in_stock=False, purchasable=False)]),
+            self._product())
+        assert result["status"] == core.OUT_OF_STOCK
+
+    def test_absent_from_catalogue_is_unknown_not_out_of_stock(self):
+        result = core.extract_wc_store_api(json.dumps([]), self._product())
+        assert result["ok"] is True
+        assert result["status"] == core.UNKNOWN
+
+    def test_someone_elses_product_is_not_ours(self):
+        payload = json.dumps([self._listed(slug="other-product",
+                                           price="50000")])
+        result = core.extract_wc_store_api(payload, self._product())
+        assert result["status"] == core.UNKNOWN
+
+    def test_missing_stock_field_is_unknown(self):
+        result = core.extract_wc_store_api(
+            json.dumps([self._listed(omit=("is_in_stock",))]),
+            self._product())
+        assert result["status"] == core.UNKNOWN
+
+    def test_in_stock_but_not_purchasable_is_unknown(self):
+        result = core.extract_wc_store_api(
+            json.dumps([self._listed(purchasable=False)]), self._product())
+        assert result["status"] == core.UNKNOWN
+
+    def test_price_mismatch_is_unknown(self):
+        """A wrong price means we are not looking at our product."""
+        result = core.extract_wc_store_api(
+            json.dumps([self._listed(price="99900")]), self._product())
+        assert result["status"] == core.UNKNOWN
+
+    def test_missing_prices_is_unknown(self):
+        item = self._listed(omit=("prices",))
+        result = core.extract_wc_store_api(json.dumps([item]),
+                                           self._product())
+        assert result["status"] == core.UNKNOWN
+
+    def test_malformed_json_raises_extraction_error(self):
+        with pytest.raises(core.ExtractionError, match="not valid JSON"):
+            core.extract_wc_store_api("<html>403 Forbidden</html>",
+                                      self._product())
+
+    def test_non_list_payload_raises_extraction_error(self):
+        with pytest.raises(core.ExtractionError, match="expected list"):
+            core.extract_wc_store_api(json.dumps({"code": 404}),
+                                      self._product())
+
+    def test_malformed_response_never_produces_a_status(self, monkeypatch):
+        monkeypatch.setattr(core, "fetch_html",
+                            lambda url, **kwargs: "<html>oops</html>")
+        obs = core.observe(self._product())
+        assert obs["ok"] is False
+        assert obs["status"] is None
+
+    def test_absence_keeps_the_previous_status_and_never_alerts(self):
+        """Not-listed while hidden must not fake a stockout or a restock."""
+        obs = core.observe(self._product(), html=json.dumps([]))
+        assert obs["ok"] is True
+        assert obs["status"] == core.UNKNOWN
+        evaluation = core.evaluate(self._product(), self._previous(), obs, T1)
+        assert evaluation.alerts == []
+        assert evaluation.entry["last_known_status"] == core.OUT_OF_STOCK
+
+    def test_listed_in_stock_after_a_witnessed_stockout_alerts(self):
+        obs = core.observe(self._product(),
+                           html=json.dumps([self._listed()]))
+        evaluation = core.evaluate(self._product(), self._previous(), obs, T1)
+        assert [a.type for a in evaluation.alerts] == ["RESTOCK"]
+        # The alert links the human product page, not the JSON endpoint.
+        assert self.PAGE in evaluation.alerts[0].message
+
+
+# =========================================================================== #
+# Fallback source wiring (core.observe + github_runner.observe_cached)
+# =========================================================================== #
+class TestFallbackSource:
+    """A product may carry a second, permitted source.
+
+    It is read only when the primary page failed, and at most once per
+    cycle: the runner replays the cached primary failure instead of
+    re-asking the endpoint that just refused us. Without a configured
+    fallback nothing changes -- the primary failure is reported verbatim.
+    """
+
+    PAGE = ("https://e2zstore.com/product/"
+            "rs-1000-playstation-network-wallet-top-up/")
+    API = ("https://e2zstore.com/wp-json/wc/store/v1/products"
+           "?slug=rs-1000-playstation-network-wallet-top-up")
+
+    @staticmethod
+    def _product(**overrides):
+        base = dict(
+            id="e2z-psn-1000", retailer="e2z Store", denomination=1000,
+            url=TestFallbackSource.PAGE, extractor="jsonld_offers",
+            enabled=True,
+            fallback={"url": TestFallbackSource.API,
+                      "extractor": "wc_store_api"},
+        )
+        base.update(overrides)
+        return base
+
+    @staticmethod
+    def _previous(status=core.OUT_OF_STOCK, price=1000.0):
+        return {
+            "status": status, "price": price, "discount": "", "cashback": "",
+            "last_error": "", "first_seen_at": T0, "last_changed_at": T0,
+            "baseline": True, "last_known_status": status, "note": "",
+        }
+
+    @staticmethod
+    def _api_listing(in_stock=True):
+        return json.dumps([{
+            "slug": "rs-1000-playstation-network-wallet-top-up",
+            "is_in_stock": in_stock,
+            "is_purchasable": in_stock,
+            "prices": {"price": "100000", "currency_code": "INR"},
+        }])
+
+    def test_without_a_fallback_the_primary_failure_is_reported_unchanged(self):
+        p = self._product()
+        p.pop("fallback")
+        err = core.requests.HTTPError("403 Client Error: Forbidden")
+        obs = core.observe(p, primary_error=err)
+        assert obs["ok"] is False
+        assert obs["status"] is None
+        assert "HTTPError" in obs["error"]
+
+    def test_fallback_is_read_after_the_primary_page_fails(self, monkeypatch):
+        calls: list[str] = []
+
+        def fake_fetch(url, **kwargs):
+            calls.append(url)
+            if url == self.PAGE:
+                raise core.requests.HTTPError("403 Client Error: Forbidden")
+            return json.dumps([])   # hidden from the catalogue while OOS
+
+        monkeypatch.setattr(core, "fetch_html", fake_fetch)
+        obs = core.observe(self._product())
+        assert obs["ok"] is True
+        assert obs["status"] == core.UNKNOWN
+        assert calls == [self.PAGE, self.API]
+
+    def test_cached_primary_failure_is_not_reasked(self, monkeypatch):
+        """The runner replays the cycle's cached failure: exactly one
+        fallback read, and the endpoint that refused us is never asked
+        again this cycle."""
+        calls: list[str] = []
+
+        def fake_fetch(url, **kwargs):
+            calls.append(url)
+            return self._api_listing()
+
+        monkeypatch.setattr(core, "fetch_html", fake_fetch)
+        cached = core.requests.HTTPError("403 Client Error: Forbidden")
+        obs = core.observe(self._product(), primary_error=cached)
+        assert obs["ok"] is True
+        assert obs["status"] == core.IN_STOCK
+        assert calls == [self.API]
+
+    def test_both_sources_failing_preserves_the_previous_status(
+            self, monkeypatch):
+        def fake_fetch(url, **kwargs):
+            raise core.requests.HTTPError("403 Client Error: Forbidden")
+
+        monkeypatch.setattr(core, "fetch_html", fake_fetch)
+        obs = core.observe(self._product())
+        assert obs["ok"] is False
+        assert obs["status"] is None
+        evaluation = core.evaluate(self._product(),
+                                   self._previous(status=core.IN_STOCK),
+                                   obs, T1)
+        assert evaluation.alerts == []
+        assert evaluation.entry["status"] == core.IN_STOCK  # preserved
+
+    def test_fallback_parse_failure_is_a_failed_observation(self, monkeypatch):
+        def fake_fetch(url, **kwargs):
+            if url == self.PAGE:
+                raise core.requests.HTTPError("403 Client Error: Forbidden")
+            return "<html>not json</html>"
+
+        monkeypatch.setattr(core, "fetch_html", fake_fetch)
+        obs = core.observe(self._product())
+        assert obs["ok"] is False
+        assert obs["status"] is None
+
+    def test_unknown_fallback_extractor_fails_safe(self):
+        p = self._product(fallback={"url": self.API, "extractor": "nope"})
+        obs = core.observe(p, primary_error=RuntimeError("boom"))
+        assert obs["ok"] is False
+        assert obs["status"] is None
+        assert "unknown fallback extractor" in obs["error"]
+
+    def test_fallback_without_url_fails_safe(self):
+        p = self._product(fallback={"extractor": "wc_store_api"})
+        obs = core.observe(p, primary_error=RuntimeError("boom"))
+        assert obs["ok"] is False
+        assert obs["status"] is None
+
+    def test_primary_page_that_fetches_but_no_longer_parses_falls_back(
+            self, monkeypatch):
+        """A changed page still reaches the second source -- but only
+        through a real parse failure, never through 'no offers found'."""
+        p = self._product(extractor="woohoo_api")
+        monkeypatch.setattr(core, "fetch_html",
+                            lambda url, **kwargs: json.dumps([]))
+        obs = core.observe(p, html="<html>Access denied</html>")
+        assert obs["ok"] is True
+        assert obs["status"] == core.UNKNOWN
+
+    def test_runner_replays_the_cached_failure_through_the_fallback(
+            self, monkeypatch):
+        import github_runner
+
+        calls: list[str] = []
+
+        def fake_fetch(url, **kwargs):
+            calls.append(url)
+            return json.dumps([])
+
+        monkeypatch.setattr(core, "fetch_html", fake_fetch)
+        cache = {self.PAGE:
+                 core.requests.HTTPError("403 Client Error: Forbidden")}
+        obs, fetched = github_runner.observe_cached(self._product(), cache)
+        assert fetched is False          # no second primary request
+        assert obs["ok"] is True
+        assert obs["status"] == core.UNKNOWN
+        assert calls == [self.API]       # exactly one fallback read
+
+
+# =========================================================================== #
+# fetch_html(): bounded retries for transient faults only
+# =========================================================================== #
+class TestFetchRetry:
+    """403/429 are decisions, not glitches: exactly one attempt.
+
+    Connection faults, timeouts and HTTP 5xx get one extra attempt and
+    then raise, so the observation still fails safe (status preserved).
+    """
+
+    class _Response:
+        def __init__(self, status, text="ok"):
+            self.status_code = status
+            self.text = text
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise core.requests.HTTPError(f"{self.status_code} Error",
+                                              response=self)
+
+    class _Session:
+        def __init__(self, script):
+            self.script = list(script)
+            self.calls: list[str] = []
+
+        def get(self, url, **kwargs):
+            self.calls.append(url)
+            item = self.script.pop(0)
+            if isinstance(item, BaseException):
+                raise item
+            return item
+
+    def test_success_costs_one_request(self):
+        session = self._Session([self._Response(200)])
+        assert core.fetch_html("https://x.test/p", session=session) == "ok"
+        assert len(session.calls) == 1
+
+    @pytest.mark.parametrize("status", [400, 403, 404, 429])
+    def test_client_errors_are_never_retried(self, status):
+        session = self._Session([self._Response(status)])
+        with pytest.raises(core.requests.HTTPError):
+            core.fetch_html("https://x.test/p", session=session)
+        assert len(session.calls) == 1
+
+    @pytest.mark.parametrize("status", [500, 502, 503])
+    def test_server_errors_get_exactly_one_extra_attempt(self, status):
+        session = self._Session([self._Response(status),
+                                 self._Response(status)])
+        with pytest.raises(core.requests.HTTPError):
+            core.fetch_html("https://x.test/p", session=session)
+        assert len(session.calls) == 2
+
+    def test_server_error_recovers_on_the_extra_attempt(self):
+        session = self._Session([self._Response(503),
+                                 self._Response(200, "recovered")])
+        html = core.fetch_html("https://x.test/p", session=session)
+        assert html == "recovered"
+        assert len(session.calls) == 2
+
+    @pytest.mark.parametrize("fault", [
+        core.requests.ConnectionError("reset"),
+        core.requests.Timeout("read timed out"),
+        ConnectionError("reset"),
+    ])
+    def test_connection_faults_get_exactly_one_extra_attempt(self, fault):
+        session = self._Session([fault, fault])
+        with pytest.raises(type(fault)):
+            core.fetch_html("https://x.test/p", session=session)
+        assert len(session.calls) == 2
+
+    def test_retries_zero_makes_every_answer_final(self):
+        session = self._Session([self._Response(503)])
+        with pytest.raises(core.requests.HTTPError):
+            core.fetch_html("https://x.test/p", session=session, retries=0)
+        assert len(session.calls) == 1
+
+
+# =========================================================================== #
+# Blinkit delivery-location guard
+# =========================================================================== #
+class TestBlinkitLocationGuard:
+    """Availability rendered for one delivery location is not global stock.
+
+    An unservable or missing location next to an OutOfStock offer is a
+    location error: it must read UNKNOWN, never OUT_OF_STOCK -- otherwise
+    a runner geolocated to the wrong city would broadcast a false
+    stockout and set up a false restock alert.
+    """
+
+    URL = ("https://blinkit.com/prn/sony-playstation-instant-voucher"
+           "/prid/698590")
+
+    @staticmethod
+    def _product(**overrides):
+        base = dict(
+            id="blinkit-psn-1000", retailer="Blinkit", denomination=1000,
+            url=TestBlinkitLocationGuard.URL, extractor="blinkit_jsonld",
+            enabled=False,
+        )
+        base.update(overrides)
+        return base
+
+    @staticmethod
+    def _page(availability="https://schema.org/OutOfStock", state=None,
+              include_state=True):
+        ld = json.dumps({
+            "@type": "Product",
+            "offers": {"@type": "Offer", "price": 1000,
+                       "availability": availability},
+        })
+        parts = [f'<script type="application/ld+json">{ld}</script>']
+        if include_state:
+            payload = ({"data": {
+                "location": {"coords": {"lat": 28.413333, "lon": 77.072833,
+                                        "locality": "Gurugram"}},
+                "locationPicker": {"isNonServiceable": False},
+            }} if state is None else state)
+            parts.append("<script>window.grofers.PRELOADED_STATE = "
+                         + json.dumps(payload) + ";</script>")
+        return "<html>" + "".join(parts) + "</html>"
+
+    @staticmethod
+    def _previous(status=core.IN_STOCK, price=1000.0):
+        return {
+            "status": status, "price": price, "discount": "", "cashback": "",
+            "last_error": "", "first_seen_at": T0, "last_changed_at": T0,
+            "baseline": True, "last_known_status": status, "note": "",
+        }
+
+    def test_registered_in_extractors(self):
+        assert (core.EXTRACTORS["blinkit_jsonld"]
+                is core.extract_blinkit_jsonld)
+
+    def test_serviceable_location_reads_jsonld_out_of_stock(self):
+        result = core.extract_blinkit_jsonld(self._page(), self._product())
+        assert result["status"] == core.OUT_OF_STOCK
+
+    def test_serviceable_location_reads_jsonld_in_stock(self):
+        result = core.extract_blinkit_jsonld(
+            self._page(availability="https://schema.org/InStock"),
+            self._product())
+        assert result["status"] == core.IN_STOCK
+
+    def test_non_serviceable_location_is_unknown_not_out_of_stock(self):
+        """Without the guard this very page reads OUT_OF_STOCK."""
+        state = {"data": {
+            "location": {"coords": {"lat": 28.4, "lon": 77.0}},
+            "locationPicker": {"isNonServiceable": True},
+        }}
+        page = self._page(state=state)
+        assert (core.extract_jsonld(page, self._product())["status"]
+                == core.OUT_OF_STOCK)      # the raw signal
+        result = core.extract_blinkit_jsonld(page, self._product())
+        assert result["status"] == core.UNKNOWN
+        assert "not serviceable" in result["note"]
+
+    def test_missing_location_coords_is_unknown(self):
+        state = {"data": {"location": {}, "locationPicker": {}}}
+        result = core.extract_blinkit_jsonld(self._page(state=state),
+                                              self._product())
+        assert result["status"] == core.UNKNOWN
+
+    def test_page_without_state_is_unknown(self):
+        result = core.extract_blinkit_jsonld(self._page(include_state=False),
+                                              self._product())
+        assert result["status"] == core.UNKNOWN
+
+    def test_truncated_state_is_unknown_not_out_of_stock(self):
+        ld = json.dumps({
+            "@type": "Product",
+            "offers": {"@type": "Offer", "price": 1000,
+                       "availability": "https://schema.org/OutOfStock"},
+        })
+        html = ('<script type="application/ld+json">' + ld + "</script>"
+                + '<script>window.grofers.PRELOADED_STATE = {"data": {'
+                + "</script>")
+        result = core.extract_blinkit_jsonld(html, self._product())
+        assert result["status"] == core.UNKNOWN
+
+    def test_guarded_read_never_becomes_out_of_stock_or_alerts(self):
+        state = {"data": {
+            "location": {"coords": {"lat": 28.4, "lon": 77.0}},
+            "locationPicker": {"isNonServiceable": True},
+        }}
+        result = core.extract_blinkit_jsonld(self._page(state=state),
+                                              self._product())
+        evaluation = core.evaluate(self._product(), self._previous(), result,
+                                   T1)
+        assert evaluation.alerts == []
+        assert evaluation.entry["status"] == core.UNKNOWN
+        assert evaluation.entry["last_known_status"] == core.IN_STOCK
+
+
+# =========================================================================== #
+# The committed products.yaml stays within the verified envelope
+# =========================================================================== #
+class TestRepositoryConfig:
+    """Counts and the exact enabled set are pinned.
+
+    Enabling a product is a deliberate, separately verified act; this is
+    what proves no run or edit silently enabled one.
+    """
+
+    EXPECTED_ENABLED = {
+        # Rooter 5
+        "rooter-psn-1000", "rooter-psn-2000", "rooter-psn-3000",
+        "rooter-psn-4000", "rooter-psn-5000",
+        # e2z Store 6
+        "e2z-psn-1000", "e2z-psn-2000", "e2z-psn-3000", "e2z-psn-4000",
+        "e2z-psn-5000", "e2z-psn-7000",
+        # StanShop 4
+        "stan-psn-1000", "stan-psn-2000", "stan-psn-3000", "stan-psn-4000",
+        # Woohoo 5
+        "woohoo-psn-1000", "woohoo-psn-2000", "woohoo-psn-3000",
+        "woohoo-psn-4000", "woohoo-psn-5000",
+    }
+
+    @pytest.fixture
+    def products(self):
+        return core.load_products()
+
+    def test_configured_count_is_45(self, products):
+        # 40 original entries + the 5 Blinkit entries added in a4540f9 and
+        # kept configured (disabled) after the runner IP block was found.
+        assert len(products) == 45
+
+    def test_enabled_count_is_20(self, products):
+        assert len(core.enabled_products(products)) == 20
+
+    def test_enabled_set_is_exactly_the_verified_entries(self, products):
+        enabled = {p["id"] for p in core.enabled_products(products)}
+        assert enabled == self.EXPECTED_ENABLED
+
+    def test_every_enabled_entry_has_a_known_extractor_and_https_url(
+            self, products):
+        for p in core.enabled_products(products):
+            assert p.get("extractor") in core.EXTRACTORS, p["id"]
+            assert str(p.get("url", "")).startswith("https://"), p["id"]
+
+    def test_e2z_entries_carry_the_store_api_fallback(self, products):
+        e2z = [p for p in products if p["id"].startswith("e2z-")]
+        assert len(e2z) == 6
+        for p in e2z:
+            fallback = p.get("fallback") or {}
+            assert fallback.get("extractor") == "wc_store_api", p["id"]
+            url = str(fallback.get("url", ""))
+            prefix = ("https://e2zstore.com/wp-json/wc/store/v1/products"
+                      "?slug=")
+            assert url.startswith(prefix), p["id"]
+            # The requested slug must be exactly the page's slug.
+            assert url[len(prefix):] == p["url"].rstrip("/").rsplit("/", 1)[-1], \
+                p["id"]
+
+    def test_blinkit_entries_are_disabled_and_location_guarded(
+            self, products):
+        blinkit = [p for p in products if p["id"].startswith("blinkit-")]
+        assert len(blinkit) == 5
+        for p in blinkit:
+            assert p["enabled"] is False, p["id"]
+            assert p["extractor"] == "blinkit_jsonld", p["id"]
+            assert str(p["url"]).startswith("https://blinkit.com/"), p["id"]
+
+    def test_blocked_retailers_stay_disabled(self, products):
+        for p in products:
+            if p["id"].startswith(("gyftr-", "gamestheshop-", "amazon-",
+                                   "paytm-")):
+                assert p["enabled"] is False, p["id"]
