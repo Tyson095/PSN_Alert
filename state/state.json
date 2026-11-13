@@ -229,19 +229,19 @@
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-13T19:04:10+05:30",
-      "message": "🟢 BACK IN STOCK\ne2z Store PSN ₹2000\nLink: https://e2zstore.com/product/rs-2000-playstation-network-wallet-top-up/\nPrice: ₹2,000.00",
-      "product_id": "e2z-psn-2000",
-      "type": "RESTOCK"
-    },
-    {
-      "at": "2026-11-13T19:06:37+05:30",
+      "at": "2026-11-13T19:05:20+05:30",
       "message": "🟢 BACK IN STOCK\ne2z Store PSN ₹1000\nLink: https://e2zstore.com/product/rs-1000-playstation-network-wallet-top-up/\nPrice: ₹1,000.00",
       "product_id": "e2z-psn-1000",
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-13T19:06:37+05:30",
+      "at": "2026-11-13T19:05:20+05:30",
+      "message": "🟢 BACK IN STOCK\ne2z Store PSN ₹2000\nLink: https://e2zstore.com/product/rs-2000-playstation-network-wallet-top-up/\nPrice: ₹2,000.00",
+      "product_id": "e2z-psn-2000",
+      "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-13T19:05:20+05:30",
       "message": "🟢 BACK IN STOCK\ne2z Store PSN ₹4000\nLink: https://e2zstore.com/product/rs-4000-playstation-network-wallet-top-up/\nPrice: ₹4,000.00",
       "product_id": "e2z-psn-4000",
       "type": "RESTOCK"
@@ -314,7 +314,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-13T19:06:37+05:30",
+      "last_changed_at": "2026-11-13T19:05:20+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
@@ -326,7 +326,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-13T19:04:10+05:30",
+      "last_changed_at": "2026-11-13T19:05:20+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
@@ -350,7 +350,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-13T19:06:37+05:30",
+      "last_changed_at": "2026-11-13T19:05:20+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
