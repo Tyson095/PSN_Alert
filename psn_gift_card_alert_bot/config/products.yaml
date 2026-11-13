@@ -119,26 +119,31 @@ products:
   # last-known status; no bypass of any kind is attempted.
   #
   # FALLBACK SOURCE -- read ONLY when the primary page fetch or parse fails:
-  #   https://e2zstore.com/wp-json/wc/store/v1/products?slug=<page slug>
+  #   https://e2zstore.com/wp-json/wc/store/v1/products/<page slug>
+  # the single-product path route of the public Store API -- NOT the ?slug=
+  # collection query, which only lists what the catalogue shows.
   # robots.txt is "User-agent: * / Allow: /" with no /wp-json/ disallow, and
   # the endpoint answers plain GETs with unchallenged 200 JSON (verified
-  # 2026-11-13 from both networks). It carries real stock fields
-  # (is_in_stock, is_purchasable) that agreed with the pages' JSON-LD on
-  # every sample: 2/2 listed products matched their pages, and 8/8 sampled
-  # products absent from the listing read schema.org/OutOfStock on their
-  # readable pages. The store excludes out-of-stock products from the
-  # catalogue query -- all 2762 listed products read is_in_stock: true --
-  # so the extractor treats "listed with matching slug and price" as a
-  # reading and "absent" as UNKNOWN. Absence is NEVER OUT_OF_STOCK: a
-  # renamed, hidden or restructured product must not fake a stockout (and
-  # therefore must not fake a restock either).
+  # 2026-11-13 from both networks). Unlike the collection query it returns
+  # products the catalogue hides: all six wallet products answered 200 with
+  # explicit stock fields (is_in_stock: false, exact prices) on 2026-11-13,
+  # an in-stock listed control agreed with the catalogue, a hidden
+  # out-of-stock control agreed with its page's schema.org/OutOfStock, and
+  # the readable Rs.7000 page agreed with the endpoint. The collection
+  # query still excludes out-of-stock products (all 2762 listed products
+  # read is_in_stock: true), so the extractor keeps the same bright line
+  # for either payload shape: "present with matching slug and price" is a
+  # reading, "absent" is UNKNOWN. Absence is NEVER OUT_OF_STOCK: a renamed,
+  # hidden or restructured product must not fake a stockout (and therefore
+  # must not fake a restock either). A slug that no longer exists answers
+  # 404, which is recorded as a failed observation and preserves the last
+  # known status.
   #
-  # Known limitation: an entry last witnessed IN_STOCK before the challenge
-  # reads UNKNOWN while the store hides it from the catalogue; its next
-  # restock updates the report but cannot alert until an OUT_OF_STOCK has
-  # been witnessed (the state file shows which entries those are). If the
-  # pages stop being challenged, the primary JSON-LD read resumes and full
-  # transition alerting is restored.
+  # Effect: hidden-but-real stock is witnessed again. An entry last
+  # witnessed IN_STOCK before the challenge records a real OUT_OF_STOCK on
+  # the first fallback read (a state update, not an alert), which restores
+  # RESTOCK alerting for it; if the pages stop being challenged the primary
+  # JSON-LD read resumes with the same semantics.
   #
   # First run records a baseline and alerts nothing, by design.
   - id: e2z-psn-1000
@@ -147,7 +152,7 @@ products:
     url: https://e2zstore.com/product/rs-1000-playstation-network-wallet-top-up/
     extractor: jsonld_offers
     fallback:
-      url: https://e2zstore.com/wp-json/wc/store/v1/products?slug=rs-1000-playstation-network-wallet-top-up
+      url: https://e2zstore.com/wp-json/wc/store/v1/products/rs-1000-playstation-network-wallet-top-up
       extractor: wc_store_api
     enabled: true
     verification: verified-2026-11-09
@@ -158,7 +163,7 @@ products:
     url: https://e2zstore.com/product/rs-2000-playstation-network-wallet-top-up/
     extractor: jsonld_offers
     fallback:
-      url: https://e2zstore.com/wp-json/wc/store/v1/products?slug=rs-2000-playstation-network-wallet-top-up
+      url: https://e2zstore.com/wp-json/wc/store/v1/products/rs-2000-playstation-network-wallet-top-up
       extractor: wc_store_api
     enabled: true
     verification: verified-2026-11-09
@@ -169,7 +174,7 @@ products:
     url: https://e2zstore.com/product/rs-3000-playstation-network-wallet-top-up/
     extractor: jsonld_offers
     fallback:
-      url: https://e2zstore.com/wp-json/wc/store/v1/products?slug=rs-3000-playstation-network-wallet-top-up
+      url: https://e2zstore.com/wp-json/wc/store/v1/products/rs-3000-playstation-network-wallet-top-up
       extractor: wc_store_api
     enabled: true
     verification: verified-2026-11-09
@@ -180,7 +185,7 @@ products:
     url: https://e2zstore.com/product/rs-4000-playstation-network-wallet-top-up/
     extractor: jsonld_offers
     fallback:
-      url: https://e2zstore.com/wp-json/wc/store/v1/products?slug=rs-4000-playstation-network-wallet-top-up
+      url: https://e2zstore.com/wp-json/wc/store/v1/products/rs-4000-playstation-network-wallet-top-up
       extractor: wc_store_api
     enabled: true
     verification: verified-2026-11-09
@@ -191,7 +196,7 @@ products:
     url: https://e2zstore.com/product/rs-5000-playstation-store-gift-card-wallet-top-up/
     extractor: jsonld_offers
     fallback:
-      url: https://e2zstore.com/wp-json/wc/store/v1/products?slug=rs-5000-playstation-store-gift-card-wallet-top-up
+      url: https://e2zstore.com/wp-json/wc/store/v1/products/rs-5000-playstation-store-gift-card-wallet-top-up
       extractor: wc_store_api
     enabled: true
     verification: verified-2026-11-09
@@ -206,7 +211,7 @@ products:
     url: https://e2zstore.com/product/rs-7000-sony-playstation-store-gift-card-wallet-top-up/
     extractor: jsonld_offers
     fallback:
-      url: https://e2zstore.com/wp-json/wc/store/v1/products?slug=rs-7000-sony-playstation-store-gift-card-wallet-top-up
+      url: https://e2zstore.com/wp-json/wc/store/v1/products/rs-7000-sony-playstation-store-gift-card-wallet-top-up
       extractor: wc_store_api
     enabled: true
     verification: verified-2026-11-09

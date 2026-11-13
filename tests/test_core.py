@@ -2277,10 +2277,45 @@ class TestWcStoreApiExtractor:
             core.extract_wc_store_api("<html>403 Forbidden</html>",
                                       self._product())
 
-    def test_non_list_payload_raises_extraction_error(self):
-        with pytest.raises(core.ExtractionError, match="expected list"):
+    def test_non_product_object_payload_raises_extraction_error(self):
+        """A dict that is not a product (e.g. an error body) is unusable."""
+        with pytest.raises(core.ExtractionError,
+                           match="expected list or product object"):
             core.extract_wc_store_api(json.dumps({"code": 404}),
                                       self._product())
+
+    # -- single-product path route (payload is one object, not a list) ---- #
+    def test_single_object_in_stock_payload_is_in_stock(self):
+        result = core.extract_wc_store_api(json.dumps(self._listed()),
+                                           self._product())
+        assert result["ok"] is True
+        assert result["status"] == core.IN_STOCK
+        assert result["price"] == 1000.0
+
+    def test_single_object_out_of_stock_payload_is_out_of_stock(self):
+        """The path route's explicit false is a reading, hidden or not."""
+        result = core.extract_wc_store_api(
+            json.dumps(self._listed(in_stock=False, purchasable=False)),
+            self._product())
+        assert result["status"] == core.OUT_OF_STOCK
+
+    def test_single_object_for_a_different_slug_is_unknown(self):
+        result = core.extract_wc_store_api(
+            json.dumps(self._listed(slug="other-product", price="50000")),
+            self._product())
+        assert result["status"] == core.UNKNOWN
+        assert "different product" in result["note"]
+
+    def test_single_object_missing_stock_field_is_unknown(self):
+        result = core.extract_wc_store_api(
+            json.dumps(self._listed(omit=("is_in_stock",))),
+            self._product())
+        assert result["status"] == core.UNKNOWN
+
+    def test_single_object_price_mismatch_is_unknown(self):
+        result = core.extract_wc_store_api(
+            json.dumps(self._listed(price="99900")), self._product())
+        assert result["status"] == core.UNKNOWN
 
     def test_malformed_response_never_produces_a_status(self, monkeypatch):
         monkeypatch.setattr(core, "fetch_html",
@@ -2322,7 +2357,7 @@ class TestFallbackSource:
     PAGE = ("https://e2zstore.com/product/"
             "rs-1000-playstation-network-wallet-top-up/")
     API = ("https://e2zstore.com/wp-json/wc/store/v1/products"
-           "?slug=rs-1000-playstation-network-wallet-top-up")
+           "/rs-1000-playstation-network-wallet-top-up")
 
     @staticmethod
     def _product(**overrides):
@@ -2710,8 +2745,7 @@ class TestRepositoryConfig:
             fallback = p.get("fallback") or {}
             assert fallback.get("extractor") == "wc_store_api", p["id"]
             url = str(fallback.get("url", ""))
-            prefix = ("https://e2zstore.com/wp-json/wc/store/v1/products"
-                      "?slug=")
+            prefix = ("https://e2zstore.com/wp-json/wc/store/v1/products/")
             assert url.startswith(prefix), p["id"]
             # The requested slug must be exactly the page's slug.
             assert url[len(prefix):] == p["url"].rstrip("/").rsplit("/", 1)[-1], \

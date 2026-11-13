@@ -286,7 +286,7 @@ Edit `psn_gift_card_alert_bot/config/products.yaml`:
 | `jsonld_offers` | The store publishes schema.org JSON-LD offers | StanShop, e2z Store (page primary) |
 | `gyftr_api` | The store serves stock from its own public JSON feed | GYFTR |
 | `woohoo_api` | The page lists what's offered and the store's own public ledger says what's sold out | Woohoo |
-| `wc_store_api` | The store exposes its public WooCommerce catalogue; *listed* with matching slug+price is a reading, *absent* is `UNKNOWN` (never a stockout) | e2z Store (fallback source) |
+| `wc_store_api` | The public Store API answers (catalogue list *or* single-product object); *present* with matching slug+price is a reading, *absent* is `UNKNOWN` (never a stockout) | e2z Store (fallback source) |
 | `blinkit_jsonld` | JSON-LD availability rendered for a single delivery location | Blinkit (behind its location guard) |
 
 `in_stock_classes` / `out_of_stock_classes` exist because some stores put the
@@ -313,7 +313,7 @@ Safety rules that are enforced by the code, not by convention:
 | Retailer | Status | Notes |
 | --- | --- | --- |
 | **Rooter** (`shop.rooter.gg`) | ✅ **Enabled, verified** | Server-rendered Next.js page; `productData.baseVariations` carries all five variants with per-variant `outOfStock`, `sellPrice`, `proSellPrice` and cashback. `robots.txt` allows crawling. 5 entries enabled. |
-| **e2z Store** (`e2zstore.com`) | ✅ **Enabled, verified** | WooCommerce. `robots.txt` says `Allow: /`. Availability comes from the page's schema.org JSON-LD (`InStock`/`OutOfStock`, walked through the WordPress SEO `@graph`), verified against live pages on 2026-11-09. **2026-11-11 update:** five of the six product pages answer HTTP 403 with `cf-mitigated: challenge` (Cloudflare managed challenge) from every network tried — a per-URL rule, not an IP block (the Rs.7000 page still answers 200). **No bypass is attempted.** Instead each entry carries a `fallback`, read **only when the primary page fetch or parse fails**: the store's public WooCommerce catalogue endpoint (`/wp-json/wc/store/v1/products?slug=…`), which robots permits and which answers plain GETs with unchallenged JSON. The catalogue excludes out-of-stock products — all 2762 listed products read `is_in_stock: true`, while 8/8 sampled products absent from it read `schema.org/OutOfStock` on their readable pages and 2/2 sampled listed products agreed with their pages' JSON-LD — so the extractor treats *listed with matching slug and price* as a reading and *absent* as `UNKNOWN`: **absence is never `OUT_OF_STOCK`**. 6 entries enabled (Rs.1000–Rs.7000); while a challenged page stays hidden from the catalogue its entry reads `UNKNOWN` and preserves its last-known status, and it resumes full transition alerting when the page becomes readable again. |
+| **e2z Store** (`e2zstore.com`) | ✅ **Enabled, verified** | WooCommerce. `robots.txt` says `Allow: /`. Availability comes from the page's schema.org JSON-LD (`InStock`/`OutOfStock`, walked through the WordPress SEO `@graph`), verified against live pages on 2026-11-09. **2026-11-11 update:** five of the six product pages answer HTTP 403 with `cf-mitigated: challenge` (Cloudflare managed challenge) from every network tried — a per-URL rule, not an IP block (the Rs.7000 page still answers 200). **No bypass is attempted.** Instead each entry carries a `fallback`, read **only when the primary page fetch or parse fails**: the store's public Store API **single-product route** (`/wp-json/wc/store/v1/products/<slug>`), which robots permits, answers plain GETs with unchallenged 200 JSON, and — unlike the `?slug=` catalogue query that lists only in-stock products — returns products the store hides, carrying explicit stock fields. Verified 2026-11-13: all six wallet products answered `is_in_stock: false` with exact prices; an in-stock listed control agreed with the catalogue; a hidden out-of-stock control agreed with its page's `schema.org/OutOfStock`; the readable Rs.7000 page agreed with the route; a nonexistent slug answers 404 (recorded as a failed observation, status preserved). The extractor keeps the safety line for either payload shape: *present with matching slug and price* is a reading, *absent* is `UNKNOWN` — **absence is never `OUT_OF_STOCK`**. 6 entries enabled (Rs.1000–Rs.7000); hidden-but-real stock is witnessed as `OUT_OF_STOCK` (a state update, not an alert), which restores restock alerting for entries last seen in stock, and the primary JSON-LD read resumes unchanged if the pages stop being challenged. |
 | **StanShop** (`www.stanshop.co`) | ✅ **Enabled, verified** | Next.js App Router, no WooCommerce markup. Publishes per-denomination schema.org JSON-LD offers with a fixed availability vocabulary. `robots.txt` says `Allow: /`. 4 entries enabled (Rs.1000–Rs.4000); StanShop publishes no Rs.5000 card, so no entry exists for it. Note `store.getstan.app` returns HTTP 402 `DEPLOYMENT_DISABLED` and is dead. |
 | **Amazon India** | ❌ Disabled | Product/search pages return HTTP **503** to non-browser clients (bot protection). Needs the official **Creators API** (PA-API 5 is deprecated) plus Associates credentials. Do not attempt to bypass the blocking. |
 | **Games The Shop** | ❌ Disabled | Product data is fetched client-side from `/api/`, which `robots.txt` explicitly `Disallow`s. Re-verified 2026-11-12: the sitemap now lists 20 `/product/<uuid>` URLs, but all of them return the same data-less ~45 KB shell and the App Router RSC flight carries router metadata only — the server-rendered source still does not exist. Respect robots; needs an official feed/API. |
@@ -392,10 +392,11 @@ brand currently lists no products to verify against. Blinkit's five
 variant URLs were each fetched live on 2026-11-12, their JSON-LD read
 back correctly, and the dry-run confirmed real statuses before enabling;
 they were disabled again on 2026-11-13 when the runner IP was found
-blocked (see the coverage table). e2z's fallback catalogue endpoint was
-checked live on 2026-11-13 — unchallenged 200 JSON, stock fields agreeing
-with the pages' JSON-LD on every sample — and is only read when the
-primary page fails. Woohoo's page and ledger were both checked live on
+blocked (see the coverage table). e2z's fallback (the Store API
+single-product route) was checked live on 2026-11-13 — unchallenged 200
+JSON for all six wallet products with explicit stock fields, agreeing with
+the pages' JSON-LD and the catalogue on every control — and is only read
+when the primary page fails. Woohoo's page and ledger were both checked live on
 2026-11-12 and agree with the shop's own cart logic; it was enabled only
 after the dry-run confirmed all five entries read a real status.
 
@@ -437,7 +438,8 @@ class-based availability, Blinkit's per-variant JSON-LD shape (numeric
 price, `www.schema.org` context, wrong denomination → `UNKNOWN`) and its
 delivery-location guard (missing or unservable location → `UNKNOWN`,
 never `OUT_OF_STOCK`), the e2z Store API fallback (read only after the
-primary page fails; absent-from-catalogue → `UNKNOWN`; a cached primary
+primary page fails; both payload shapes; absent → `UNKNOWN` never
+`OUT_OF_STOCK`; a cached primary
 failure is replayed instead of re-asking the endpoint), bounded fetch
 retries (403/429 never retried; 5xx/connection faults get exactly one
 extra attempt), safety rules (unknown never counts as

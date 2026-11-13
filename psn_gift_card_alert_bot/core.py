@@ -1025,26 +1025,36 @@ def extract_woohoo(html: str, product: dict[str, Any]) -> dict[str, Any]:
 
 
 def extract_wc_store_api(html: str, product: dict[str, Any]) -> dict[str, Any]:
-    """Read one denomination from a WooCommerce Store API product listing.
+    """Read one denomination from a public WooCommerce Store API response.
 
-    The public storefront endpoint (``/wp-json/wc/store/v1/products?slug=…``)
-    answers with a JSON array containing **only the products the catalogue
-    query lists**. On the store that publishes it, out-of-stock products are
-    excluded from that query -- verified 2026-11-13: all 2762 listed products
-    read ``is_in_stock: true``, while 8 of 8 sampled sitemap products absent
-    from the listing read ``schema.org/OutOfStock`` on their readable pages,
-    and the two sampled listed products agreed with their pages' JSON-LD.
+    Two permitted endpoints answer this function, both under
+    ``/wp-json/wc/store/v1/products`` and both allowed by the store's
+    ``robots.txt`` (``User-agent: * / Allow: /``):
 
-    That yields three answer shapes, and only two are stock facts:
+    * the **collection query** (``?slug=…``) returns a JSON array containing
+      **only the products the catalogue lists** -- on the store that
+      publishes it, out-of-stock products are excluded from that query
+      (verified 2026-11-13: all 2762 listed products read
+      ``is_in_stock: true``, while 8 of 8 sampled sitemap products absent
+      from the listing read ``schema.org/OutOfStock`` on their readable
+      pages);
+    * the **single-product path route** (``/<slug>``) returns one product
+      object *even when the catalogue hides it*, with the same explicit
+      stock fields -- verified 2026-11-13 on all six hidden wallet products
+      (``is_in_stock: false`` with exact prices), an in-stock listed
+      control, a hidden out-of-stock control, and 404 for a slug that does
+      not exist (404 raises in ``fetch_html`` before this code runs).
+
+    Answer shapes, and only two of them are stock facts:
 
     * listed with ``is_in_stock: true`` *and* ``is_purchasable: true`` (and a
       price matching the configured denomination) -> ``IN_STOCK``;
     * listed with ``is_in_stock: false`` -> ``OUT_OF_STOCK``: an explicit
       stock field, not an absence;
-    * **not listed** -> ``UNKNOWN``. Absence is never ``OUT_OF_STOCK``: a
-      product can also be missing because it was renamed, hidden, or the
-      payload changed, and misreading that as a stockout is exactly the
-      failure the monitoring rules forbid.
+    * **not present** in the payload -> ``UNKNOWN``. Absence is never
+      ``OUT_OF_STOCK``: a product can also be missing because it was
+      renamed, hidden, or the payload changed, and misreading that as a
+      stockout is exactly the failure the monitoring rules forbid.
 
     The slug is derived from the configured page URL so an exact match ties
     the response to this denomination, and the price (the Store API reports
@@ -1055,19 +1065,34 @@ def extract_wc_store_api(html: str, product: dict[str, Any]) -> dict[str, Any]:
     except (ValueError, TypeError) as exc:
         raise ExtractionError(
             f"Store API response is not valid JSON: {exc}") from exc
-    if not isinstance(data, list):
+    if isinstance(data, list):
+        items = data
+        shape = "catalogue"
+    elif isinstance(data, dict) and isinstance(data.get("slug"), str):
+        items = [data]
+        shape = "single product"
+    else:
         raise ExtractionError(
-            f"unexpected Store API payload: {type(data).__name__}, expected list")
+            f"unexpected Store API payload: {type(data).__name__}, "
+            "expected list or product object")
 
     path = urlparse(str(product.get("url") or "")).path.rstrip("/")
     expected = path.rsplit("/", 1)[-1] if path else ""
     if not expected:
         raise ExtractionError("cannot derive product slug from the configured url")
 
-    match = next((item for item in data
+    match = next((item for item in items
                   if isinstance(item, dict) and item.get("slug") == expected),
                  None)
     if match is None:
+        if shape == "single product":
+            got = items[0].get("slug")
+            return {
+                "ok": True, "status": UNKNOWN, "price": None, "discount": "",
+                "cashback": "", "error": "",
+                "note": f"endpoint answered for a different product ({got}); "
+                        "refusing to claim a status",
+            }
         return {
             "ok": True, "status": UNKNOWN, "price": None, "discount": "",
             "cashback": "", "error": "",
