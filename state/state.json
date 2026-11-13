@@ -375,7 +375,7 @@
       "discount": "",
       "first_seen_at": "2026-11-10T17:18:21+05:30",
       "last_changed_at": "2026-11-10T17:18:21+05:30",
-      "last_error": "",
+      "last_error": "ReadTimeout: HTTPSConnectionPool(host='e2zstore.com', port=443): Read timed out. (read timeout=30.0)",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 7000.0,
