@@ -314,12 +314,12 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-13T19:05:20+05:30",
+      "last_changed_at": "2026-11-13T23:05:39+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 1000.0,
-      "status": "IN_STOCK"
+      "status": "OUT_OF_STOCK"
     },
     "e2z-psn-2000": {
       "baseline": true,
