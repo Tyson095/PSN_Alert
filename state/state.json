@@ -475,61 +475,61 @@
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-17T17:47:29+05:30",
+      "at": "2026-11-17T17:46:34+05:30",
       "message": "🟢 BACK IN STOCK\nRooter PSN ₹1000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹1,000.00",
       "product_id": "rooter-psn-1000",
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-17T17:47:29+05:30",
+      "at": "2026-11-17T17:46:34+05:30",
       "message": "🏷️ DISCOUNT / OFFER UPDATE\nRooter PSN ₹1000\nPro price ₹993.33\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
       "product_id": "rooter-psn-1000",
       "type": "DISCOUNT"
     },
     {
-      "at": "2026-11-17T17:47:29+05:30",
+      "at": "2026-11-17T17:46:34+05:30",
       "message": "🟢 BACK IN STOCK\nRooter PSN ₹2000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹2,000.00",
       "product_id": "rooter-psn-2000",
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-17T17:47:29+05:30",
+      "at": "2026-11-17T17:46:34+05:30",
       "message": "🏷️ DISCOUNT / OFFER UPDATE\nRooter PSN ₹2000\nPro price ₹1,986.67\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
       "product_id": "rooter-psn-2000",
       "type": "DISCOUNT"
     },
     {
-      "at": "2026-11-17T17:47:29+05:30",
+      "at": "2026-11-17T17:46:34+05:30",
       "message": "🟢 BACK IN STOCK\nRooter PSN ₹3000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹3,000.00",
       "product_id": "rooter-psn-3000",
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-17T17:47:29+05:30",
+      "at": "2026-11-17T17:46:34+05:30",
       "message": "🏷️ DISCOUNT / OFFER UPDATE\nRooter PSN ₹3000\nPro price ₹2,980.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
       "product_id": "rooter-psn-3000",
       "type": "DISCOUNT"
     },
     {
-      "at": "2026-11-17T17:47:29+05:30",
+      "at": "2026-11-17T17:46:34+05:30",
       "message": "🟢 BACK IN STOCK\nRooter PSN ₹4000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹4,000.00",
       "product_id": "rooter-psn-4000",
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-17T17:47:29+05:30",
+      "at": "2026-11-17T17:46:34+05:30",
       "message": "🏷️ DISCOUNT / OFFER UPDATE\nRooter PSN ₹4000\nPro price ₹3,973.33\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
       "product_id": "rooter-psn-4000",
       "type": "DISCOUNT"
     },
     {
-      "at": "2026-11-17T17:47:29+05:30",
+      "at": "2026-11-17T17:46:34+05:30",
       "message": "🟢 BACK IN STOCK\nRooter PSN ₹5000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹5,000.00",
       "product_id": "rooter-psn-5000",
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-17T17:47:29+05:30",
+      "at": "2026-11-17T17:46:34+05:30",
       "message": "🏷️ DISCOUNT / OFFER UPDATE\nRooter PSN ₹5000\nPro price ₹4,960.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
       "product_id": "rooter-psn-5000",
       "type": "DISCOUNT"
@@ -674,7 +674,7 @@
       "cashback": "",
       "discount": "Pro price ₹993.33",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-17T17:47:29+05:30",
+      "last_changed_at": "2026-11-17T17:46:34+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
@@ -686,7 +686,7 @@
       "cashback": "",
       "discount": "Pro price ₹1,986.67",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-17T17:47:29+05:30",
+      "last_changed_at": "2026-11-17T17:46:34+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
@@ -698,7 +698,7 @@
       "cashback": "",
       "discount": "Pro price ₹2,980.00",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-17T17:47:29+05:30",
+      "last_changed_at": "2026-11-17T17:46:34+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
@@ -710,7 +710,7 @@
       "cashback": "",
       "discount": "Pro price ₹3,973.33",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-17T17:47:29+05:30",
+      "last_changed_at": "2026-11-17T17:46:34+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
@@ -722,7 +722,7 @@
       "cashback": "",
       "discount": "Pro price ₹4,960.00",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-17T17:47:29+05:30",
+      "last_changed_at": "2026-11-17T17:46:34+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
