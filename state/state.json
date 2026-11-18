@@ -704,12 +704,12 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-18T18:43:20+05:30",
+      "last_changed_at": "2026-11-18T19:15:42+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 4000.0,
-      "status": "IN_STOCK"
+      "status": "OUT_OF_STOCK"
     },
     "e2z-psn-5000": {
       "baseline": true,
