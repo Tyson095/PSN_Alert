@@ -740,11 +740,11 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-18T11:47:35+05:30",
+      "last_changed_at": "2026-11-18T17:26:31+05:30",
       "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 985.0,
+      "price": 993.33,
       "status": "OUT_OF_STOCK"
     },
     "rooter-psn-2000": {
@@ -752,11 +752,11 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-18T11:47:35+05:30",
+      "last_changed_at": "2026-11-18T17:26:31+05:30",
       "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 1970.0,
+      "price": 1986.67,
       "status": "OUT_OF_STOCK"
     },
     "rooter-psn-3000": {
@@ -764,11 +764,11 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-18T11:47:35+05:30",
+      "last_changed_at": "2026-11-18T17:26:31+05:30",
       "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 2955.0,
+      "price": 2980.0,
       "status": "OUT_OF_STOCK"
     },
     "rooter-psn-4000": {
@@ -776,11 +776,11 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-18T11:47:35+05:30",
+      "last_changed_at": "2026-11-18T17:26:31+05:30",
       "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 3940.0,
+      "price": 3973.33,
       "status": "OUT_OF_STOCK"
     },
     "rooter-psn-5000": {
@@ -788,11 +788,11 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-18T11:47:35+05:30",
+      "last_changed_at": "2026-11-18T17:26:31+05:30",
       "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 4925.0,
+      "price": 4950.0,
       "status": "OUT_OF_STOCK"
     },
     "stan-psn-1000": {
