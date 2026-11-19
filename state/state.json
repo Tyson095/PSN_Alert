@@ -1,6 +1,30 @@
 {
   "events": [
     {
+      "at": "2026-11-15T20:16:29+05:30",
+      "message": "🟢 BACK IN STOCK\ne2z Store PSN ₹5000\nLink: https://e2zstore.com/product/rs-5000-playstation-store-gift-card-wallet-top-up/\nPrice: ₹5,000.00",
+      "product_id": "e2z-psn-5000",
+      "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-16T16:17:30+05:30",
+      "message": "🟢 BACK IN STOCK\ne2z Store PSN ₹1000\nLink: https://e2zstore.com/product/rs-1000-playstation-network-wallet-top-up/\nPrice: ₹1,000.00",
+      "product_id": "e2z-psn-1000",
+      "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-16T16:17:30+05:30",
+      "message": "🟢 BACK IN STOCK\ne2z Store PSN ₹2000\nLink: https://e2zstore.com/product/rs-2000-playstation-network-wallet-top-up/\nPrice: ₹2,000.00",
+      "product_id": "e2z-psn-2000",
+      "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-16T20:16:41+05:30",
+      "message": "🟢 BACK IN STOCK\ne2z Store PSN ₹4000\nLink: https://e2zstore.com/product/rs-4000-playstation-network-wallet-top-up/\nPrice: ₹4,000.00",
+      "product_id": "e2z-psn-4000",
+      "type": "RESTOCK"
+    },
+    {
       "at": "2026-11-16T23:59:35+05:30",
       "message": "🟢 BACK IN STOCK\ne2z Store PSN ₹1000\nLink: https://e2zstore.com/product/rs-1000-playstation-network-wallet-top-up/\nPrice: ₹1,000.00",
       "product_id": "e2z-psn-1000",
@@ -575,30 +599,6 @@
       "message": "🟢 BACK IN STOCK\ne2z Store PSN ₹2000\nLink: https://e2zstore.com/product/rs-2000-playstation-network-wallet-top-up/\nPrice: ₹2,000.00",
       "product_id": "e2z-psn-2000",
       "type": "RESTOCK"
-    },
-    {
-      "at": "2026-11-20T00:32:04+05:30",
-      "message": "🟢 BACK IN STOCK\nStanShop PSN ₹1000\nLink: https://www.stanshop.co/playstation-psn-gift-card-in-india\nPrice: ₹1,000.00",
-      "product_id": "stan-psn-1000",
-      "type": "RESTOCK"
-    },
-    {
-      "at": "2026-11-20T00:32:04+05:30",
-      "message": "🟢 BACK IN STOCK\nStanShop PSN ₹2000\nLink: https://www.stanshop.co/playstation-psn-gift-card-in-india\nPrice: ₹2,000.00",
-      "product_id": "stan-psn-2000",
-      "type": "RESTOCK"
-    },
-    {
-      "at": "2026-11-20T00:32:04+05:30",
-      "message": "🟢 BACK IN STOCK\nStanShop PSN ₹3000\nLink: https://www.stanshop.co/playstation-psn-gift-card-in-india\nPrice: ₹3,000.00",
-      "product_id": "stan-psn-3000",
-      "type": "RESTOCK"
-    },
-    {
-      "at": "2026-11-20T00:32:04+05:30",
-      "message": "🟢 BACK IN STOCK\nStanShop PSN ₹4000\nLink: https://www.stanshop.co/playstation-psn-gift-card-in-india\nPrice: ₹4,000.00",
-      "product_id": "stan-psn-4000",
-      "type": "RESTOCK"
     }
   ],
   "last_daily_report_date": "2026-11-19",
@@ -800,48 +800,48 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-20T00:32:04+05:30",
+      "last_changed_at": "2026-11-20T00:28:20+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 1000.0,
-      "status": "IN_STOCK"
+      "status": "OUT_OF_STOCK"
     },
     "stan-psn-2000": {
       "baseline": true,
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-20T00:32:04+05:30",
+      "last_changed_at": "2026-11-20T00:28:20+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 2000.0,
-      "status": "IN_STOCK"
+      "status": "OUT_OF_STOCK"
     },
     "stan-psn-3000": {
       "baseline": true,
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-20T00:32:04+05:30",
+      "last_changed_at": "2026-11-20T00:28:20+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 3000.0,
-      "status": "IN_STOCK"
+      "status": "OUT_OF_STOCK"
     },
     "stan-psn-4000": {
       "baseline": true,
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-20T00:32:04+05:30",
+      "last_changed_at": "2026-11-20T00:28:20+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 4000.0,
-      "status": "IN_STOCK"
+      "status": "OUT_OF_STOCK"
     },
     "woohoo-psn-1000": {
       "baseline": true,
