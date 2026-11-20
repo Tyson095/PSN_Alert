@@ -2,18 +2,6 @@
   "events": [
     {
       "at": "2026-11-17T17:46:34+05:30",
-      "message": "🏷️ DISCOUNT / OFFER UPDATE\nRooter PSN ₹3000\nPro price ₹2,980.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
-      "product_id": "rooter-psn-3000",
-      "type": "DISCOUNT"
-    },
-    {
-      "at": "2026-11-17T17:46:34+05:30",
-      "message": "🟢 BACK IN STOCK\nRooter PSN ₹4000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹4,000.00",
-      "product_id": "rooter-psn-4000",
-      "type": "RESTOCK"
-    },
-    {
-      "at": "2026-11-17T17:46:34+05:30",
       "message": "🏷️ DISCOUNT / OFFER UPDATE\nRooter PSN ₹4000\nPro price ₹3,973.33\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
       "product_id": "rooter-psn-4000",
       "type": "DISCOUNT"
@@ -599,6 +587,18 @@
       "message": "🟢 BACK IN STOCK\nWoohoo PSN ₹2000\nLink: https://www.woohoo.in/playstation-e-gift-instant-voucher\nPrice: ₹2,000.00",
       "product_id": "woohoo-psn-2000",
       "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-20T10:09:19+05:30",
+      "message": "🟢 BACK IN STOCK\nWoohoo PSN ₹1000\nLink: https://www.woohoo.in/playstation-e-gift-instant-voucher\nPrice: ₹1,000.00",
+      "product_id": "woohoo-psn-1000",
+      "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-20T10:09:19+05:30",
+      "message": "🟢 BACK IN STOCK\nWoohoo PSN ₹2000\nLink: https://www.woohoo.in/playstation-e-gift-instant-voucher\nPrice: ₹2,000.00",
+      "product_id": "woohoo-psn-2000",
+      "type": "RESTOCK"
     }
   ],
   "last_daily_report_date": "2026-11-20",
@@ -848,24 +848,24 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-12T12:22:19+05:30",
-      "last_changed_at": "2026-11-20T10:04:22+05:30",
+      "last_changed_at": "2026-11-20T10:09:19+05:30",
       "last_error": "",
-      "last_known_status": "OUT_OF_STOCK",
+      "last_known_status": "IN_STOCK",
       "note": "",
       "price": 1000.0,
-      "status": "OUT_OF_STOCK"
+      "status": "IN_STOCK"
     },
     "woohoo-psn-2000": {
       "baseline": true,
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-12T12:22:19+05:30",
-      "last_changed_at": "2026-11-20T10:04:22+05:30",
+      "last_changed_at": "2026-11-20T10:09:19+05:30",
       "last_error": "",
-      "last_known_status": "OUT_OF_STOCK",
+      "last_known_status": "IN_STOCK",
       "note": "",
       "price": 2000.0,
-      "status": "OUT_OF_STOCK"
+      "status": "IN_STOCK"
     },
     "woohoo-psn-3000": {
       "baseline": true,
