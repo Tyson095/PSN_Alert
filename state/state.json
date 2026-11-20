@@ -589,13 +589,13 @@
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-20T10:02:38+05:30",
+      "at": "2026-11-20T10:03:28+05:30",
       "message": "🟢 BACK IN STOCK\nWoohoo PSN ₹1000\nLink: https://www.woohoo.in/playstation-e-gift-instant-voucher\nPrice: ₹1,000.00",
       "product_id": "woohoo-psn-1000",
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-20T10:02:38+05:30",
+      "at": "2026-11-20T10:03:28+05:30",
       "message": "🟢 BACK IN STOCK\nWoohoo PSN ₹2000\nLink: https://www.woohoo.in/playstation-e-gift-instant-voucher\nPrice: ₹2,000.00",
       "product_id": "woohoo-psn-2000",
       "type": "RESTOCK"
@@ -848,7 +848,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-12T12:22:19+05:30",
-      "last_changed_at": "2026-11-20T10:02:38+05:30",
+      "last_changed_at": "2026-11-20T10:03:28+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
@@ -860,7 +860,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-12T12:22:19+05:30",
-      "last_changed_at": "2026-11-20T10:02:38+05:30",
+      "last_changed_at": "2026-11-20T10:03:28+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
