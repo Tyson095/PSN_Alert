@@ -2528,6 +2528,207 @@ class TestFetchRetry:
 
 
 # =========================================================================== #
+# Per-website alert quiet window and combined messages
+# =========================================================================== #
+class TestAlertQuietWindow:
+    NOW = "2026-11-22T13:00:00+05:30"
+
+    def test_new_state_is_not_quiet(self):
+        assert core.website_is_quiet({}, "Rooter", self.NOW) is False
+        empty = {"alert_quiet_until": {}}
+        assert core.website_is_quiet(empty, "Rooter", self.NOW) is False
+
+    def test_marked_website_is_quiet_until_the_window_expires(self):
+        state: dict = {}
+        core.mark_website_alerted(state, "Rooter", self.NOW, minutes=15)
+        assert core.website_is_quiet(
+            state, "Rooter", "2026-11-22T13:14:59+05:30") is True
+        # Exactly at the boundary the window is over: notify again.
+        assert core.website_is_quiet(
+            state, "Rooter", "2026-11-22T13:15:00+05:30") is False
+        assert core.website_is_quiet(
+            state, "Rooter", "2026-11-22T14:00:00+05:30") is False
+
+    def test_quiet_is_per_website(self):
+        state: dict = {}
+        core.mark_website_alerted(state, "Rooter", self.NOW)
+        assert core.website_is_quiet(state, "StanShop", self.NOW) is False
+
+    def test_empty_retailer_is_never_quiet(self):
+        state = {"alert_quiet_until": {"": "2099-01-01T00:00:00+05:30"}}
+        assert core.website_is_quiet(state, "", self.NOW) is False
+
+    def test_corrupt_marker_fails_open(self):
+        state = {"alert_quiet_until": {"Rooter": "not-a-timestamp"}}
+        assert core.website_is_quiet(state, "Rooter", self.NOW) is False
+
+    def test_default_window_is_15_minutes(self, monkeypatch):
+        monkeypatch.delenv("ALERT_QUIET_MINUTES", raising=False)
+        assert core.alert_quiet_minutes() == 15.0
+
+    def test_window_length_is_env_configurable(self, monkeypatch):
+        monkeypatch.setenv("ALERT_QUIET_MINUTES", "10")
+        assert core.alert_quiet_minutes() == 10.0
+
+    def test_invalid_env_falls_back_to_default_not_silence(self, monkeypatch):
+        monkeypatch.setenv("ALERT_QUIET_MINUTES", "soon")
+        assert core.alert_quiet_minutes() == 15.0
+
+    def test_zero_disables_the_window(self, monkeypatch):
+        monkeypatch.setenv("ALERT_QUIET_MINUTES", "0")
+        state: dict = {}
+        core.mark_website_alerted(state, "Rooter", self.NOW)
+        assert core.website_is_quiet(state, "Rooter", self.NOW) is False
+
+
+class TestCombineAlerts:
+    @staticmethod
+    def _restock(retailer: str, denom, price) -> core.Alert:
+        link = "https://shop.example.test/p"
+        return core.Alert(
+            "RESTOCK", f"{retailer.lower()}-psn-{denom}",
+            f"🟢 BACK IN STOCK\n{retailer} PSN ₹{denom}\n"
+            f"Link: {link}\nPrice: ₹{price:,.2f}",
+            retailer=retailer, detail=f"₹{denom} (₹{price:,.0f})", link=link,
+        )
+
+    def test_same_type_alerts_collapse_into_one_message(self):
+        alerts = [self._restock("Rooter", d, p)
+                  for d, p in ((1000, 985), (2000, 1970), (3000, 2955))]
+        text = core.combine_alerts(alerts)
+        assert text.count("🟢 BACK IN STOCK") == 1
+        assert text.count("Link: https://shop.example.test/p") == 1
+        assert "Rooter PSN" in text
+        for expected in ("₹1000 (₹985)", "₹2000 (₹1,970)", "₹3000 (₹2,955)"):
+            assert expected in text
+
+    def test_mixed_types_keep_separate_sections(self):
+        drop = core.Alert(
+            "PRICE_DROP", "rooter-psn-2000",
+            "🔻 PRICE DROP\nRooter PSN ₹2000\nLink: https://x.test/p",
+            retailer="Rooter", detail="₹2000: ₹2,000 → ₹1,970",
+            link="https://x.test/p",
+        )
+        text = core.combine_alerts([self._restock("Rooter", 1000, 985), drop])
+        assert "🟢 BACK IN STOCK" in text
+        assert "🔻 PRICE DROP" in text
+        assert text.index("🟢") < text.index("🔻")
+        assert text.count("Link: ") == 2
+
+    def test_unstructured_alerts_fall_back_to_original_messages(self):
+        text = core.combine_alerts([
+            core.Alert("RESTOCK", "a", "message one"),
+            core.Alert("RESTOCK", "b", "message two"),
+        ])
+        assert text == "message one\n\nmessage two"
+
+
+class TestDispatchAlerts:
+    NOW = "2026-11-22T13:00:00+05:30"
+
+    @staticmethod
+    def _alerts(retailer: str = "Rooter", count: int = 2) -> dict:
+        return {
+            retailer: [
+                core.Alert("RESTOCK", f"p{i}", f"message {i}",
+                           retailer=retailer, detail=f"₹{(i + 1) * 1000}",
+                           link="https://x.test/p")
+                for i in range(count)
+            ]
+        }
+
+    @staticmethod
+    def _collector():
+        delivered: list[str] = []
+
+        def deliver(text: str) -> bool:
+            delivered.append(text)
+            return True
+
+        return delivered, deliver
+
+    def test_one_combined_message_then_quiet(self):
+        state: dict = {}
+        delivered, deliver = self._collector()
+        messages, suppressed = core.dispatch_alerts(
+            state, self._alerts(), self.NOW, deliver)
+        assert (messages, suppressed) == (1, 0)
+        assert len(delivered) == 1
+        assert delivered[0].count("RESTOCK") == 1 or "🟢" in delivered[0]
+        assert "₹1000" in delivered[0] and "₹2000" in delivered[0]
+        # Same website again inside the window: suppressed, nothing sent.
+        messages, suppressed = core.dispatch_alerts(
+            state, self._alerts(), "2026-11-22T13:10:00+05:30", deliver)
+        assert (messages, suppressed) == (0, 2)
+        assert len(delivered) == 1
+
+    def test_other_website_is_not_affected(self):
+        state: dict = {}
+        _, deliver = self._collector()
+        core.dispatch_alerts(state, self._alerts("Rooter"), self.NOW, deliver)
+        messages, suppressed = core.dispatch_alerts(
+            state, self._alerts("StanShop"), self.NOW, deliver)
+        assert (messages, suppressed) == (1, 0)
+
+    def test_after_the_window_a_new_event_notifies_again(self):
+        state: dict = {}
+        _, deliver = self._collector()
+        core.dispatch_alerts(state, self._alerts(), self.NOW, deliver)
+        messages, _ = core.dispatch_alerts(
+            state, self._alerts(), "2026-11-22T13:15:00+05:30", deliver)
+        assert messages == 1
+
+    def test_failed_delivery_does_not_open_the_window(self):
+        state: dict = {}
+        messages, _ = core.dispatch_alerts(
+            state, self._alerts(), self.NOW, lambda t: False)
+        assert messages == 0
+        assert not state.get("alert_quiet_until")
+        # Next cycle retries immediately instead of being swallowed.
+        messages, _ = core.dispatch_alerts(
+            state, self._alerts(), "2026-11-22T13:01:00+05:30",
+            lambda t: True)
+        assert messages == 1
+
+    def test_dry_run_neither_delivers_nor_opens_the_window(self):
+        state: dict = {}
+        delivered, deliver = self._collector()
+        messages, suppressed = core.dispatch_alerts(
+            state, self._alerts(), self.NOW, deliver, dry_run=True)
+        assert (messages, suppressed) == (1, 0)
+        assert delivered == []
+        assert not state.get("alert_quiet_until")
+
+    def test_dry_run_still_reports_suppression(self):
+        state: dict = {}
+        core.mark_website_alerted(state, "Rooter", self.NOW, minutes=15)
+        messages, suppressed = core.dispatch_alerts(
+            state, self._alerts(), "2026-11-22T13:05:00+05:30",
+            lambda t: True, dry_run=True)
+        assert (messages, suppressed) == (0, 2)
+
+    def test_evaluate_stamps_structured_alert_context(self):
+        product = {"id": "rooter-psn-1000", "retailer": "Rooter",
+                   "denomination": 1000, "url": "https://x.test/p",
+                   "extractor": "rooter_rsc"}
+        out = {"ok": True, "status": core.OUT_OF_STOCK, "price": 985.0,
+               "discount": "", "cashback": ""}
+        previous = core.evaluate(product, None, out, T0).entry
+        result = core.evaluate(
+            product, previous,
+            {"ok": True, "status": core.IN_STOCK, "price": 985.0,
+             "discount": "Pro price ₹993.33", "cashback": ""}, T1)
+        types = [a.type for a in result.alerts]
+        assert types[0] == "RESTOCK"
+        restock = result.alerts[0]
+        assert restock.retailer == "Rooter"
+        assert restock.detail == "₹1000 (₹985)"
+        assert restock.link == "https://x.test/p"
+        discount = next(a for a in result.alerts if a.type == "DISCOUNT")
+        assert discount.detail == "₹1000: Pro price ₹993.33"
+
+
+# =========================================================================== #
 # The committed products.yaml stays within the verified envelope
 # =========================================================================== #
 class TestRepositoryConfig:

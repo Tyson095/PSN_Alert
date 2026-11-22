@@ -28,7 +28,7 @@ Detection logic is shared by both entry points in
 | `psn_gift_card_alert_bot/bot.py` | Optional local long-running process (pairing, `/status`) |
 | `psn_gift_card_alert_bot/config/products.yaml` | Product list; `enabled: true/false` |
 | `state/state.json` | Persisted observations and last report date (committed; contains no chat id) |
-| `tests/test_core.py` | 253 tests for state, transitions, dedup, extractors (incl. GYFTR's JSON feed, Woohoo's inventory ledger, e2z's Store API fallback), bounded fetch retries, the enable-candidate signal, report totals, message splitting, chat-id isolation, repository config pins |
+| `tests/test_core.py` | 272 tests for state, transitions, dedup, extractors (incl. GYFTR's JSON feed, Woohoo's inventory ledger, e2z's Store API fallback), bounded fetch retries, the enable-candidate signal, the per-website alert quiet window, report totals, message splitting, chat-id isolation, repository config pins |
 | `requirements.txt` | Runtime dependencies (canonical) |
 | `requirements-dev.txt` | Test dependencies (`pytest`) |
 
@@ -303,7 +303,16 @@ Safety rules that are enforced by the code, not by convention:
   raises nothing, so the first run cannot burst false alerts.
 - `RESTOCK` fires only when the previous *known* state was `OUT_OF_STOCK`.
   A baseline discovery (`UNKNOWN → IN_STOCK`) is not reported as a restock.
-- Duplicate alerts are suppressed while the state stays the same.
+- Duplicate alerts are suppressed while the state keeps the same.
+- **One message per website, then a quiet window.** When several
+  denominations of the same retailer alert in one cycle they are merged
+  into a single message (one header, one compact line per denomination),
+  and that website is then muted for `ALERT_QUIET_MINUTES` (default 15;
+  `0` disables). State keeps tracking silently through the window, so the
+  next in-stock event *after* it expires notifies again — a site whose
+  stock flaps every few minutes cannot message every cycle. The window
+  only opens after the message was actually delivered; a failed Telegram
+  send is retried next cycle instead of being swallowed.
 
 ---
 
@@ -422,7 +431,10 @@ failure is replayed instead of re-asking the endpoint), bounded fetch
 retries (403/429 never retried; 5xx/connection faults get exactly one
 extra attempt), safety rules (unknown never counts as
 in/out of stock), the enable-candidate re-check (disabled entries with a URL
-warn the run once they read a real status), Woohoo's ledger failure modes
+warn the run once they read a real status), the per-website alert quiet
+window (one combined message per website, mute across cycles, expiry,
+per-website isolation, failed-send retry, dry-run behaviour,
+`ALERT_QUIET_MINUTES` parsing), Woohoo's ledger failure modes
 (missing stock field, partial reply, fetch failure, unoffered slab,
 per-cycle request sharing), the repository config pins (40 configured / 20
 enabled, exact enabled set), report scheduling, money parsing and token

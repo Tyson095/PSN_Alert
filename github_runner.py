@@ -229,6 +229,9 @@ def main(argv: list[str] | None = None) -> int:
     # ------------------------------------------------------------------ #
     entries = state.setdefault("products", {})
     all_alerts: list[core.Alert] = []
+    # Alerts are grouped per website and sent after the loop: one combined
+    # message per website, then its quiet window (core.dispatch_alerts).
+    alerts_by_retailer: dict[str, list[core.Alert]] = {}
     failures = 0
 
     # Several entries deliberately share one URL: Rooter's five variants live
@@ -261,17 +264,28 @@ def main(argv: list[str] | None = None) -> int:
             log.info("      ALERT %s", alert.type)
             all_alerts.append(alert)
             core.record_event(state, pid, alert.type, alert.message, now_text)
-            if not args.dry_run:
-                if chat_id:
-                    core.send_message(token, chat_id, alert.message)
-                else:
-                    log.warning("Alert generated but TELEGRAM_CHAT_ID is not "
-                                "configured; not sent")
+            alerts_by_retailer.setdefault(
+                str(product.get("retailer") or ""), []).append(alert)
 
         # Pace only real network requests. Products that reused a cached page
         # cost no bandwidth, so sleeping after them would just slow the cycle.
         if fetched and delay and index < len(active):
             time.sleep(delay)
+
+    # ------------------------------------------------------------------ #
+    # Deliver this cycle's alerts: one combined message per website, then
+    # that website is quiet for ALERT_QUIET_MINUTES (default 15) so a
+    # flapping or slow-moving site cannot message every cycle.
+    # ------------------------------------------------------------------ #
+    def _deliver(text: str) -> bool:
+        if not chat_id:
+            log.warning("Alert generated but TELEGRAM_CHAT_ID is not "
+                        "configured; not sent")
+            return False
+        return core.send_message(token, chat_id, text)
+
+    _, suppressed = core.dispatch_alerts(
+        state, alerts_by_retailer, now_text, _deliver, dry_run=args.dry_run)
 
     # ------------------------------------------------------------------ #
     # Disabled entries that still have a URL get one re-check per cycle.
@@ -338,6 +352,8 @@ def main(argv: list[str] | None = None) -> int:
         value = str(entries[pid].get("status") or core.UNKNOWN)
         statuses[value] = statuses.get(value, 0) + 1
     summary = ", ".join(f"{k}={v}" for k, v in sorted(statuses.items()))
+    if suppressed:
+        summary += f", {suppressed} alert(s) suppressed by website quiet"
     log.info("Cycle complete: %d alert(s), failures=%d, %s",
              len(all_alerts), failures, summary or "no state")
 
@@ -347,7 +363,10 @@ def main(argv: list[str] | None = None) -> int:
         log.error("Every enabled product failed - check blocking/robots/page changes")
         return 2
 
-    gh_notice(f"Cycle complete: {len(all_alerts)} alert(s), {failures} failure(s)")
+    notice = f"Cycle complete: {len(all_alerts)} alert(s), {failures} failure(s)"
+    if suppressed:
+        notice += f", {suppressed} suppressed by website quiet"
+    gh_notice(notice)
     return 0
 
 

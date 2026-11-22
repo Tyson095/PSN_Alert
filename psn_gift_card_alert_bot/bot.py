@@ -167,6 +167,9 @@ def monitor_all() -> None:
     now = core.now_iso(TZ)
     entries = state.setdefault("products", {})
     alerts: list[core.Alert] = []
+    # Grouped per website: one combined message, then a quiet window --
+    # identical to github_runner.py (see core.dispatch_alerts).
+    alerts_by_retailer: dict[str, list[core.Alert]] = {}
 
     for product in products:
         pid = str(product.get("id") or "")
@@ -185,9 +188,14 @@ def monitor_all() -> None:
             log.info("ALERT %s for %s", alert.type, pid)
             alerts.append(alert)
             core.record_event(state, pid, alert.type, alert.message, now)
-            send(alert.message)
+            alerts_by_retailer.setdefault(
+                str(product.get("retailer") or ""), []).append(alert)
 
         time.sleep(float(os.getenv("REQUEST_DELAY_SECONDS", "2")))
+
+    _, suppressed = core.dispatch_alerts(state, alerts_by_retailer, now, send)
+    if suppressed:
+        log.info("%d alert(s) suppressed by website quiet window", suppressed)
 
     with _state_lock:
         core.save_state(state)

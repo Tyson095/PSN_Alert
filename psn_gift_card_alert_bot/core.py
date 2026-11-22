@@ -26,9 +26,9 @@ import random
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 from urllib.parse import urlencode, urlparse
 from zoneinfo import ZoneInfo
 
@@ -1344,6 +1344,14 @@ class Alert:
     type: str
     product_id: str
     message: str
+    # Structured context so same-run alerts from one website can be merged
+    # into a single message (see ``combine_alerts``): ``detail`` is the
+    # compact per-denomination line (e.g. ``₹1000 (₹985)``), ``retailer``
+    # and ``link`` label and source the merged section. Fields default to
+    # "" so an alert built from just the first three still works.
+    retailer: str = ""
+    detail: str = ""
+    link: str = ""
 
 
 @dataclass
@@ -1385,6 +1393,7 @@ def evaluate(product: dict[str, Any], previous: dict[str, Any] | None,
         entry["baseline"] = bool(previous)
     alerts: list[Alert] = []
     label = product_label(product)
+    denom = product.get("denomination", "?")
     # An optional per-product ``link`` overrides the fetched URL when those
     # differ (GYFTR's feed URL is JSON a person cannot open in a browser).
     link = product.get("link") or product.get("url", "")
@@ -1435,9 +1444,15 @@ def evaluate(product: dict[str, Any], previous: dict[str, Any] | None,
     #    also means OUT_OF_STOCK -> UNKNOWN -> IN_STOCK still alerts correctly.
     if new_status == IN_STOCK and previous_known == OUT_OF_STOCK:
         message = f"🟢 BACK IN STOCK\n{label}\nLink: {link}"
+        detail = f"₹{denom}"
         if new_price is not None:
             message += f"\nPrice: ₹{new_price:,.2f}"
-        alerts.append(Alert("RESTOCK", product.get("id", ""), message))
+            detail += f" (₹{new_price:,.0f})"
+        alerts.append(Alert(
+            "RESTOCK", product.get("id", ""), message,
+            retailer=str(product.get("retailer") or ""),
+            detail=detail, link=link,
+        ))
 
     # 2. Price drop. Increases are silent.
     if (isinstance(old_price, (int, float)) and isinstance(new_price, (int, float))
@@ -1447,6 +1462,9 @@ def evaluate(product: dict[str, Any], previous: dict[str, Any] | None,
             product.get("id", ""),
             f"🔻 PRICE DROP\n{label}\n"
             f"₹{old_price:,.2f} → ₹{new_price:,.2f}\nLink: {link}",
+            retailer=str(product.get("retailer") or ""),
+            detail=f"₹{denom}: ₹{old_price:,.0f} → ₹{new_price:,.0f}",
+            link=link,
         ))
 
     # 3. Discount / cashback offer appearing or changing.
@@ -1455,12 +1473,18 @@ def evaluate(product: dict[str, Any], previous: dict[str, Any] | None,
             "DISCOUNT",
             product.get("id", ""),
             f"🏷️ DISCOUNT / OFFER UPDATE\n{label}\n{new_discount}\nLink: {link}",
+            retailer=str(product.get("retailer") or ""),
+            detail=f"₹{denom}: {new_discount}",
+            link=link,
         ))
     if new_cashback and new_cashback != old_cashback:
         alerts.append(Alert(
             "CASHBACK",
             product.get("id", ""),
             f"💰 CASHBACK UPDATE\n{label}\n{new_cashback}\nLink: {link}",
+            retailer=str(product.get("retailer") or ""),
+            detail=f"₹{denom}: {new_cashback}",
+            link=link,
         ))
 
     changed_fields = {
@@ -1482,6 +1506,155 @@ def evaluate(product: dict[str, Any], previous: dict[str, Any] | None,
     if changed:
         entry["last_changed_at"] = now
     return Evaluation(entry=entry, alerts=alerts, changed=changed or bool(alerts))
+
+
+# --------------------------------------------------------------------------- #
+# Per-website alert quiet window
+# --------------------------------------------------------------------------- #
+# One website flipping five denominations at once used to produce five
+# messages, and a site whose stock flapped every few minutes produced them
+# again and again. The rule buyers asked for: one message per website, then
+# that website stays quiet for a while; when it is in stock *again* after
+# the window, it notifies again. State keeps tracking silently throughout.
+ALERT_QUIET_DEFAULT_MINUTES = 15.0
+
+ALERT_HEADERS = {
+    "RESTOCK": "🟢 BACK IN STOCK",
+    "PRICE_DROP": "🔻 PRICE DROP",
+    "DISCOUNT": "🏷️ DISCOUNT / OFFER UPDATE",
+    "CASHBACK": "💰 CASHBACK UPDATE",
+}
+
+
+def alert_quiet_minutes() -> float:
+    """Quiet-window length in minutes (``ALERT_QUIET_MINUTES``, default 15).
+
+    ``0`` disables the window entirely (every cycle may alert again); an
+    unparseable value falls back to the default rather than to silence --
+    a typo must never mute the bot forever.
+    """
+    raw = os.getenv("ALERT_QUIET_MINUTES", "").strip()
+    if not raw:
+        return ALERT_QUIET_DEFAULT_MINUTES
+    try:
+        minutes = float(raw)
+    except ValueError:
+        log.warning("Invalid ALERT_QUIET_MINUTES=%r; using %s minutes",
+                    raw, ALERT_QUIET_DEFAULT_MINUTES)
+        return ALERT_QUIET_DEFAULT_MINUTES
+    return max(minutes, 0.0)
+
+
+def website_is_quiet(state: dict[str, Any], retailer: str, now: str) -> bool:
+    """True while ``retailer``'s post-alert quiet window still holds."""
+    if not retailer:
+        return False
+    quiet = state.get("alert_quiet_until")
+    if not isinstance(quiet, dict):
+        return False
+    until = quiet.get(retailer)
+    if not until:
+        return False
+    try:
+        return datetime.fromisoformat(now) < datetime.fromisoformat(str(until))
+    except ValueError:
+        # Corrupt marker: fail open. A stale mute is worse than a repeat
+        # alert, because a muted bot looks like a working bot.
+        return False
+
+
+def mark_website_alerted(state: dict[str, Any], retailer: str, now: str,
+                         minutes: float | None = None) -> None:
+    """Open ``retailer``'s quiet window, ``minutes`` from ``now``."""
+    if not retailer:
+        return
+    if minutes is None:
+        minutes = alert_quiet_minutes()
+    try:
+        base = datetime.fromisoformat(now)
+    except ValueError:
+        return
+    quiet = state.setdefault("alert_quiet_until", {})
+    if isinstance(quiet, dict):
+        quiet[retailer] = (base + timedelta(minutes=minutes)).isoformat()
+
+
+def combine_alerts(alerts: list[Alert]) -> str:
+    """Merge one website's same-run alerts into a single Telegram message.
+
+    Several denominations usually flip together and the buyer wants one
+    notification, not five: same-type alerts collapse into one header, one
+    label line and one compact line per denomination. Mixed types (a
+    restock beside a price drop) keep their own sections, and any alert
+    lacking structured detail falls back to its original message so no
+    information can be lost.
+    """
+    sections: list[str] = []
+    seen: list[str] = []
+    for alert in alerts:
+        if alert.type in seen:
+            continue
+        seen.append(alert.type)
+        group = [a for a in alerts if a.type == alert.type]
+        if not all(a.detail for a in group):
+            # Unstructured alert: keep every original message verbatim.
+            sections.append("\n\n".join(a.message for a in group))
+            continue
+        header = ALERT_HEADERS.get(alert.type, alert.type)
+        retailer = group[0].retailer or "?"
+        lines = [header, f"{retailer} PSN"]
+        lines.extend(a.detail for a in group)
+        link = next((a.link for a in group if a.link), "")
+        if link:
+            lines.append(f"Link: {link}")
+        sections.append("\n".join(lines))
+    return "\n\n".join(sections)
+
+
+def dispatch_alerts(state: dict[str, Any],
+                    alerts_by_retailer: dict[str, list[Alert]],
+                    now: str,
+                    deliver: Callable[[str], bool],
+                    dry_run: bool = False) -> tuple[int, int]:
+    """Send at most one message per website, honouring its quiet window.
+
+    Alerts raised for a website inside its window are suppressed (the
+    caller has already recorded them in ``state``), so the next in-stock
+    event *after* the window notifies again. Returns
+    ``(messages, alerts_suppressed)``.
+
+    The window only opens after ``deliver`` reports success: a failed
+    Telegram send is retried next cycle instead of being swallowed. Dry
+    runs evaluate the window for an accurate preview but neither deliver
+    nor open it.
+    """
+    messages = 0
+    suppressed = 0
+    for retailer, alerts in alerts_by_retailer.items():
+        if not alerts:
+            continue
+        if website_is_quiet(state, retailer, now):
+            log.info("      %d alert(s) for %s suppressed (quiet until %s)",
+                     len(alerts), retailer,
+                     state.get("alert_quiet_until", {}).get(retailer))
+            suppressed += len(alerts)
+            continue
+        message = alerts[0].message if len(alerts) == 1 else combine_alerts(alerts)
+        if dry_run:
+            log.info("      dry run: would send %d alert(s) for %s as one message",
+                     len(alerts), retailer)
+            messages += 1
+            continue
+        if deliver(message):
+            mark_website_alerted(state, retailer, now)
+            messages += 1
+            log.info("      sent %d alert(s) for %s as one message; "
+                     "quiet for %s min", len(alerts), retailer,
+                     alert_quiet_minutes())
+        else:
+            log.warning("      alert for %s not delivered; quiet window "
+                        "not opened", retailer)
+    return messages, suppressed
 
 
 # --------------------------------------------------------------------------- #
