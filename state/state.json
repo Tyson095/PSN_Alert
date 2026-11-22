@@ -735,6 +735,54 @@
       "price": 7000.0,
       "status": "OUT_OF_STOCK"
     },
+    "gyftr-psn-1000": {
+      "baseline": true,
+      "cashback": "",
+      "discount": "",
+      "first_seen_at": "2026-11-22T14:29:29+05:30",
+      "last_changed_at": "2026-11-22T14:29:29+05:30",
+      "last_error": "",
+      "last_known_status": "OUT_OF_STOCK",
+      "note": "",
+      "price": 1000.0,
+      "status": "OUT_OF_STOCK"
+    },
+    "gyftr-psn-2000": {
+      "baseline": true,
+      "cashback": "",
+      "discount": "",
+      "first_seen_at": "2026-11-22T14:29:29+05:30",
+      "last_changed_at": "2026-11-22T14:29:29+05:30",
+      "last_error": "",
+      "last_known_status": "IN_STOCK",
+      "note": "",
+      "price": 2000.0,
+      "status": "IN_STOCK"
+    },
+    "gyftr-psn-3000": {
+      "baseline": true,
+      "cashback": "",
+      "discount": "",
+      "first_seen_at": "2026-11-22T14:29:29+05:30",
+      "last_changed_at": "2026-11-22T14:29:29+05:30",
+      "last_error": "",
+      "last_known_status": "IN_STOCK",
+      "note": "",
+      "price": 3000.0,
+      "status": "IN_STOCK"
+    },
+    "gyftr-psn-5000": {
+      "baseline": true,
+      "cashback": "",
+      "discount": "",
+      "first_seen_at": "2026-11-22T14:29:29+05:30",
+      "last_changed_at": "2026-11-22T14:29:29+05:30",
+      "last_error": "",
+      "last_known_status": "IN_STOCK",
+      "note": "",
+      "price": 5000.0,
+      "status": "IN_STOCK"
+    },
     "rooter-psn-1000": {
       "baseline": true,
       "cashback": "",
