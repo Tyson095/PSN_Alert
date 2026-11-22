@@ -28,7 +28,7 @@ Detection logic is shared by both entry points in
 | `psn_gift_card_alert_bot/bot.py` | Optional local long-running process (pairing, `/status`) |
 | `psn_gift_card_alert_bot/config/products.yaml` | Product list; `enabled: true/false` |
 | `state/state.json` | Persisted observations and last report date (committed; contains no chat id) |
-| `tests/test_core.py` | 272 tests for state, transitions, dedup, extractors (incl. GYFTR's JSON feed, Woohoo's inventory ledger, e2z's Store API fallback), bounded fetch retries, the enable-candidate signal, the per-website alert quiet window, report totals, message splitting, chat-id isolation, repository config pins |
+| `tests/test_core.py` | 274 tests for state, transitions, dedup, extractors (incl. GYFTR's JSON feed, Woohoo's inventory ledger, e2z's Store API fallback), bounded fetch retries, the enable-candidate signal, the per-website alert quiet window, report totals, message splitting, chat-id isolation, repository config pins |
 | `requirements.txt` | Runtime dependencies (canonical) |
 | `requirements-dev.txt` | Test dependencies (`pytest`) |
 
@@ -188,10 +188,10 @@ should show a dispatch roughly every five minutes.
 
 ### What a cycle costs
 
-- **Retailers:** one request per distinct URL — 7 requests across 3 hosts, so
-  **12 requests/hour per host**, with a 2-second pause between real requests.
-  Entries that share a page (Rooter's five variants, StanShop's four) are
-  fetched once, not once each.
+- **Retailers:** one request per distinct URL — 11 requests across 5 hosts
+  per cycle, with a 2-second pause between real requests. Entries that share
+  a page (Rooter's five variants, StanShop's four, Woohoo's five, GYFTR's
+  four) are fetched once, not once each.
 - **GitHub:** the repository is public, so Actions minutes are unlimited. A
   cycle takes about 30 seconds, comfortably inside a 5-minute window.
 - Nothing here bypasses CAPTCHA, authentication or anti-bot protection.
@@ -326,14 +326,14 @@ Safety rules that are enforced by the code, not by convention:
 | **Amazon India** | ❌ Disabled | Product/search pages return HTTP **503** to non-browser clients (bot protection). Needs the official **Creators API** (PA-API 5 is deprecated) plus Associates credentials. Do not attempt to bypass the blocking. |
 | **Games The Shop** | ❌ Disabled | Product data is fetched client-side from `/api/`, which `robots.txt` explicitly `Disallow`s. Re-verified 2026-11-12: the sitemap now lists 20 `/product/<uuid>` URLs, but all of them return the same data-less ~45 KB shell and the App Router RSC flight carries router metadata only — the server-rendered source still does not exist. Respect robots; needs an official feed/API. |
 | **Paytm** | ❌ Disabled | Search returns a generic marketing page; no server-rendered listings. |
-| **GYFTR** (`www.gyftr.com`) | ⏳ **Disabled, data path verified** | The PlayStation brand page is live (brand id 753, published), but its HTML is an empty Next.js shell: denominations, prices and a per-product `stock_left` count come from the site's own unauthenticated JSON feed (`api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation`), which answers a plain GET with the `Origin`/`Referer` its own JavaScript sends. Neither host's `robots.txt` restricts it; no cookie, credential or challenge is involved. The feed works (other brands return real stock counts) but currently returns **zero products** for PlayStation — and the site's own search returns "No Brands Found" — so no denomination can be verified. 5 entries configured (Rs.1000–Rs.5000, denominations unverified) and disabled; **the runner annotates every run once the feed lists products again**, which is the cue to verify and enable. |
+| **GYFTR** (`www.gyftr.com`) | ✅ **Enabled, verified** | The PlayStation brand page is live (brand id 753, published), but its HTML is an empty Next.js shell: denominations, prices and a per-product `stock_left` count come from the site's own unauthenticated JSON feed (`api.gyftr.com/gyftrapi/api/v1/brand/detail/sony-playstation`), which answers a plain GET with the `Origin`/`Referer` its own JavaScript sends. Neither host's `robots.txt` restricts it; no cookie, credential or challenge is involved. The feed listed zero products when first checked (2026-11-11) and listed four again on **2026-11-22**: Rs.1000 (`stock_left` 0 → `OUT_OF_STOCK`), Rs.2000 (7), Rs.3000 (5), Rs.5000 (3) — each read back from the live feed before enabling, so **4 entries are enabled** and their first run seeds baselines silently. GYFTR publishes no Rs.4000 PlayStation card: that entry stays **disabled** as an enable-candidate — it shares the enabled entries' feed URL (no extra request) and the runner annotates the run the moment it reads a real status there. |
 | **Woohoo** (`www.woohoo.in`) | ✅ **Enabled, verified** | The product page is server-rendered and embeds `window.__INITIAL_STATE` with the offered slabs (`price.denominations` = Rs.1000–5000 for `sku B2CEGVGBPS001`, `upc.id` 7864) — but no stock field at all; the default slab display and the quantity limit are configuration, not stock. Stock comes from the site's own unauthenticated ledger `GET /proxy/locale/en-in/product/inventories?searchCriteria…entityId=<upc>`, whose direction is proven by the shipped bundle: returned rows land in `outOfStockDenominations` and cart items listed there are blocked ("Item is out of stock"), the selector switches away from a listed slab, and normally-purchasable control brands return an empty list. `robots.txt` disallows only `/en-in/`; no cookie, login or checkout is involved. Checked live 2026-11-12: **all five PlayStation slabs currently read OUT_OF_STOCK** (ledger rows dated 2026-11-05…09). 5 entries enabled (Rs.1000–Rs.5000) after a dry-run confirmed real statuses; their first observation seeded baselines, so the first stock transition will alert. |
 
-**20 entries are enabled across 4 retailers** (Rooter 5, e2z 6, StanShop 4,
-Woohoo 5), all PlayStation only. 40 entries are configured in total; the
-other 20 stay disabled (GYFTR 5, Games The Shop 5, Amazon 5, Paytm 5)
-until each data path can be read reliably from the runner. No third-party
-provider has been signed up for or paid for.
+**24 entries are enabled across 5 retailers** (Rooter 5, e2z 6, StanShop 4,
+Woohoo 5, GYFTR 4), all PlayStation only. 40 entries are configured in total;
+the other 16 stay disabled (GYFTR's unlisted Rs.4000 card, Games The Shop 5,
+Amazon 5, Paytm 5) until each data path can be read reliably from the runner.
+No third-party provider has been signed up for or paid for.
 
 ### Why Cloudflare bypass tools are not used
 
@@ -365,25 +365,27 @@ test against the live page):
    the product RSC flight is 227 bytes of router metadata. The server-
    rendered source still does not exist.
 3. **Paytm** — needs a server-rendered or official listing URL.
-4. **GYFTR** — the feed and data path are verified, but the brand publishes
-   no products at all right now (its own search returns "No Brands Found").
-   The runner re-checks the disabled entries every cycle and will annotate
-   each run with
-   `gyftr-psn-1000: disabled entry now reads IN_STOCK -- verify ...`
-   (or `OUT_OF_STOCK`) the moment the feed lists products again — that
-   annotation is the cue to run `python github_runner.py --dry-run`,
-   confirm each entry reads a real status (not `UNKNOWN`), delete any
-   denomination GYFTR does not actually list, and set `enabled: true`.
-   An entry for a card GYFTR never sells would sit at `UNKNOWN` forever.
+4. **GYFTR's Rs.4000 card** — the four denominations GYFTR actually lists
+   (Rs.1000/2000/3000/5000) are enabled as of 2026-11-22, but the brand
+   publishes no Rs.4000 PlayStation card, so that entry stays disabled
+   (an always-`UNKNOWN` entry would be a broken signal, not a stock one).
+   It keeps its feed URL as an enable-candidate: the runner annotates each
+   run with
+   `gyftr-psn-4000: disabled entry now reads IN_STOCK -- verify ...`
+   the moment the feed lists a Rs.4000 product — run
+   `python github_runner.py --dry-run`, confirm a real status (not
+   `UNKNOWN`), and set `enabled: true` then.
 5. For any page that lists several denominations at once, the selector must
    be scoped to the exact denomination — otherwise "out of stock" for one
    variant can be read as stock for another.
 
-No working product URLs or selectors were invented. The 20 enabled entries
-(Rooter, e2z Store, StanShop, Woohoo) were each checked against
-the live page before `enabled: true` was set. GYFTR's feed URL was
-likewise checked and works, but its entries stay disabled because the
-brand currently lists no products to verify against. e2z's fallback (the Store API
+No working product URLs or selectors were invented. The 24 enabled entries
+(Rooter, e2z Store, StanShop, Woohoo, GYFTR) were each checked against
+the live page before `enabled: true` was set. GYFTR's four enabled entries
+were read back from its live feed entry by entry on 2026-11-22 — three
+in stock, the Rs.1000 card sold out, all as real statuses rather than
+`UNKNOWN` — before the flag was flipped; its Rs.4000 entry stays disabled
+because GYFTR publishes no such card. e2z's fallback (the Store API
 single-product route) was checked live on 2026-11-13 — unchallenged 200
 JSON for all six wallet products with explicit stock fields, agreeing with
 the pages' JSON-LD and the catalogue on every control — and is only read
@@ -402,8 +404,10 @@ after the dry-run confirmed all five entries read a real status.
   is never asked twice in a cycle. Transient faults (timeouts, connection
   resets, HTTP 5xx) get at most one extra attempt with a small backoff;
   HTTP 403/429 and other 4xx answers are final and are never retried. The
-  per-cycle probe of disabled entries that still have a URL costs one
-  request (GYFTR's five entries share one feed URL). Woohoo costs **two** requests
+  per-cycle probe of disabled entries that still have a URL now costs no
+  extra request: its only candidate (GYFTR's Rs.4000 entry) shares the feed
+  URL the four enabled GYFTR entries already fetched this cycle. Woohoo costs
+  **two** requests
   per cycle — the product page and the inventory ledger — both shared by
   all five of its entries.
 - No CAPTCHA solving, no authentication bypass, no anti-bot evasion. If a
@@ -436,9 +440,10 @@ window (one combined message per website, mute across cycles, expiry,
 per-website isolation, failed-send retry, dry-run behaviour,
 `ALERT_QUIET_MINUTES` parsing), Woohoo's ledger failure modes
 (missing stock field, partial reply, fetch failure, unoffered slab,
-per-cycle request sharing), the repository config pins (40 configured / 20
-enabled, exact enabled set), report scheduling, money parsing and token
-scrubbing.
+per-cycle request sharing), the repository config pins (40 configured / 24
+enabled, exact enabled set, GYFTR's unlisted Rs.4000 staying disabled, its
+enabled entries sharing one feed URL), report scheduling, money parsing and
+token scrubbing.
 
 ---
 

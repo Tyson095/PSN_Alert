@@ -2750,6 +2750,9 @@ class TestRepositoryConfig:
         # Woohoo 5
         "woohoo-psn-1000", "woohoo-psn-2000", "woohoo-psn-3000",
         "woohoo-psn-4000", "woohoo-psn-5000",
+        # GYFTR 4 (its Rs.4000 card does not exist; see below)
+        "gyftr-psn-1000", "gyftr-psn-2000", "gyftr-psn-3000",
+        "gyftr-psn-5000",
     }
 
     @pytest.fixture
@@ -2761,8 +2764,8 @@ class TestRepositoryConfig:
         # and the blocked-retailer placeholders.
         assert len(products) == 40
 
-    def test_enabled_count_is_20(self, products):
-        assert len(core.enabled_products(products)) == 20
+    def test_enabled_count_is_24(self, products):
+        assert len(core.enabled_products(products)) == 24
 
     def test_enabled_set_is_exactly_the_verified_entries(self, products):
         enabled = {p["id"] for p in core.enabled_products(products)}
@@ -2789,6 +2792,24 @@ class TestRepositoryConfig:
 
     def test_blocked_retailers_stay_disabled(self, products):
         for p in products:
-            if p["id"].startswith(("gyftr-", "gamestheshop-", "amazon-",
-                                   "paytm-")):
+            if p["id"].startswith(("gamestheshop-", "amazon-", "paytm-")):
                 assert p["enabled"] is False, p["id"]
+
+    def test_unlisted_gyftr_denomination_stays_disabled(self, products):
+        # GYFTR sells no Rs.4000 PlayStation card (verified against the live
+        # feed 2026-11-22): an entry that can never read a real status must
+        # not be enabled, but it keeps its URL as an enable-candidate so the
+        # run annotates itself if GYFTR starts listing the denomination.
+        entry = next(p for p in products if p["id"] == "gyftr-psn-4000")
+        assert entry["enabled"] is False
+        assert str(entry["url"]).startswith("https://")
+
+    def test_enabled_gyftr_entries_share_one_feed_url(self, products):
+        # Four enabled entries, one request per cycle: the feed URL must be
+        # identical for every enabled GYFTR entry (the cycle fetch cache is
+        # keyed by URL, which is also what makes the Rs.4000 probe free).
+        gyftr = [p for p in core.enabled_products(products)
+                 if p["id"].startswith("gyftr-")]
+        assert len(gyftr) == 4
+        assert len({p["url"] for p in gyftr}) == 1
+        assert all(p["extractor"] == "gyftr_api" for p in gyftr)
