@@ -764,12 +764,12 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-22T14:29:29+05:30",
-      "last_changed_at": "2026-11-22T14:29:29+05:30",
+      "last_changed_at": "2026-11-22T21:25:30+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
-      "note": "",
-      "price": 3000.0,
-      "status": "IN_STOCK"
+      "note": "denomination 3000 not among GYFTR's published products",
+      "price": null,
+      "status": "UNKNOWN"
     },
     "gyftr-psn-5000": {
       "baseline": true,
