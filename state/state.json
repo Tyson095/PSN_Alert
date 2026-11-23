@@ -1,7 +1,4 @@
 {
-  "alert_quiet_until": {
-    "Rooter": "2026-11-23T18:51:44+05:30"
-  },
   "events": [
     {
       "at": "2026-11-21T12:45:45+05:30",
@@ -574,31 +571,31 @@
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-23T18:36:44+05:30",
+      "at": "2026-11-23T18:35:51+05:30",
       "message": "🔻 PRICE DROP\nRooter PSN ₹1000\n₹1,000.00 → ₹985.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
       "product_id": "rooter-psn-1000",
       "type": "PRICE_DROP"
     },
     {
-      "at": "2026-11-23T18:36:44+05:30",
+      "at": "2026-11-23T18:35:51+05:30",
       "message": "🔻 PRICE DROP\nRooter PSN ₹2000\n₹2,000.00 → ₹1,970.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
       "product_id": "rooter-psn-2000",
       "type": "PRICE_DROP"
     },
     {
-      "at": "2026-11-23T18:36:44+05:30",
+      "at": "2026-11-23T18:35:51+05:30",
       "message": "🔻 PRICE DROP\nRooter PSN ₹3000\n₹3,000.00 → ₹2,955.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
       "product_id": "rooter-psn-3000",
       "type": "PRICE_DROP"
     },
     {
-      "at": "2026-11-23T18:36:44+05:30",
+      "at": "2026-11-23T18:35:51+05:30",
       "message": "🔻 PRICE DROP\nRooter PSN ₹4000\n₹4,000.00 → ₹3,940.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
       "product_id": "rooter-psn-4000",
       "type": "PRICE_DROP"
     },
     {
-      "at": "2026-11-23T18:36:44+05:30",
+      "at": "2026-11-23T18:35:51+05:30",
       "message": "🔻 PRICE DROP\nRooter PSN ₹5000\n₹5,000.00 → ₹4,925.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
       "product_id": "rooter-psn-5000",
       "type": "PRICE_DROP"
@@ -791,7 +788,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-23T18:36:44+05:30",
+      "last_changed_at": "2026-11-23T18:35:51+05:30",
       "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
@@ -803,7 +800,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-23T18:36:44+05:30",
+      "last_changed_at": "2026-11-23T18:35:51+05:30",
       "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
@@ -815,7 +812,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-23T18:36:44+05:30",
+      "last_changed_at": "2026-11-23T18:35:51+05:30",
       "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
@@ -827,7 +824,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-23T18:36:44+05:30",
+      "last_changed_at": "2026-11-23T18:35:51+05:30",
       "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
@@ -839,7 +836,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-23T18:36:44+05:30",
+      "last_changed_at": "2026-11-23T18:35:51+05:30",
       "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
