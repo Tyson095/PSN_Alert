@@ -1,8 +1,35 @@
 {
-  "alert_quiet_until": {
-    "Rooter": "2026-11-23T22:46:18+05:30"
-  },
   "events": [
+    {
+      "at": "2026-11-22T14:16:35+05:30",
+      "message": "🟢 BACK IN STOCK\nRooter PSN ₹2000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹2,000.00",
+      "product_id": "rooter-psn-2000",
+      "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-22T14:16:35+05:30",
+      "message": "🟢 BACK IN STOCK\nRooter PSN ₹3000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹3,000.00",
+      "product_id": "rooter-psn-3000",
+      "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-22T14:16:35+05:30",
+      "message": "🟢 BACK IN STOCK\nRooter PSN ₹4000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹4,000.00",
+      "product_id": "rooter-psn-4000",
+      "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-22T14:16:35+05:30",
+      "message": "🟢 BACK IN STOCK\nRooter PSN ₹5000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹5,000.00",
+      "product_id": "rooter-psn-5000",
+      "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-22T14:20:09+05:30",
+      "message": "🔻 PRICE DROP\nRooter PSN ₹1000\n₹1,000.00 → ₹985.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
+      "product_id": "rooter-psn-1000",
+      "type": "PRICE_DROP"
+    },
     {
       "at": "2026-11-22T14:20:09+05:30",
       "message": "🔻 PRICE DROP\nRooter PSN ₹2000\n₹2,000.00 → ₹1,970.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
@@ -572,36 +599,6 @@
       "message": "🔻 PRICE DROP\nRooter PSN ₹5000\n₹5,000.00 → ₹4,925.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
       "product_id": "rooter-psn-5000",
       "type": "PRICE_DROP"
-    },
-    {
-      "at": "2026-11-23T22:31:18+05:30",
-      "message": "🟢 BACK IN STOCK\nRooter PSN ₹1000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹1,000.00",
-      "product_id": "rooter-psn-1000",
-      "type": "RESTOCK"
-    },
-    {
-      "at": "2026-11-23T22:31:18+05:30",
-      "message": "🟢 BACK IN STOCK\nRooter PSN ₹2000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹2,000.00",
-      "product_id": "rooter-psn-2000",
-      "type": "RESTOCK"
-    },
-    {
-      "at": "2026-11-23T22:31:18+05:30",
-      "message": "🟢 BACK IN STOCK\nRooter PSN ₹3000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹3,000.00",
-      "product_id": "rooter-psn-3000",
-      "type": "RESTOCK"
-    },
-    {
-      "at": "2026-11-23T22:31:18+05:30",
-      "message": "🟢 BACK IN STOCK\nRooter PSN ₹4000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹4,000.00",
-      "product_id": "rooter-psn-4000",
-      "type": "RESTOCK"
-    },
-    {
-      "at": "2026-11-23T22:31:18+05:30",
-      "message": "🟢 BACK IN STOCK\nRooter PSN ₹5000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹5,000.00",
-      "product_id": "rooter-psn-5000",
-      "type": "RESTOCK"
     }
   ],
   "last_daily_report_date": "2026-11-23",
@@ -791,60 +788,60 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-23T22:31:18+05:30",
+      "last_changed_at": "2026-11-23T22:19:03+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 1000.0,
-      "status": "IN_STOCK"
+      "price": 985.0,
+      "status": "OUT_OF_STOCK"
     },
     "rooter-psn-2000": {
       "baseline": true,
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-23T22:31:18+05:30",
+      "last_changed_at": "2026-11-23T22:19:03+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 2000.0,
-      "status": "IN_STOCK"
+      "price": 1970.0,
+      "status": "OUT_OF_STOCK"
     },
     "rooter-psn-3000": {
       "baseline": true,
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-23T22:31:18+05:30",
+      "last_changed_at": "2026-11-23T22:19:03+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 3000.0,
-      "status": "IN_STOCK"
+      "price": 2955.0,
+      "status": "OUT_OF_STOCK"
     },
     "rooter-psn-4000": {
       "baseline": true,
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-23T22:31:18+05:30",
+      "last_changed_at": "2026-11-23T22:19:03+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 4000.0,
-      "status": "IN_STOCK"
+      "price": 3940.0,
+      "status": "OUT_OF_STOCK"
     },
     "rooter-psn-5000": {
       "baseline": true,
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-23T22:31:18+05:30",
+      "last_changed_at": "2026-11-23T22:19:03+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 5000.0,
-      "status": "IN_STOCK"
+      "price": 4925.0,
+      "status": "OUT_OF_STOCK"
     },
     "stan-psn-1000": {
       "baseline": true,
