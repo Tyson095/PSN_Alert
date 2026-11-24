@@ -848,7 +848,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-24T19:47:56+05:30",
+      "last_changed_at": "2026-11-24T19:48:52+05:30",
       "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
@@ -860,36 +860,36 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-24T17:27:24+05:30",
+      "last_changed_at": "2026-11-24T19:48:52+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 2000.0,
-      "status": "IN_STOCK"
+      "status": "OUT_OF_STOCK"
     },
     "stan-psn-3000": {
       "baseline": true,
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-24T15:26:27+05:30",
+      "last_changed_at": "2026-11-24T19:48:52+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 3000.0,
-      "status": "IN_STOCK"
+      "status": "OUT_OF_STOCK"
     },
     "stan-psn-4000": {
       "baseline": true,
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-24T18:26:25+05:30",
+      "last_changed_at": "2026-11-24T19:48:52+05:30",
       "last_error": "",
-      "last_known_status": "IN_STOCK",
+      "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 4000.0,
-      "status": "IN_STOCK"
+      "status": "OUT_OF_STOCK"
     },
     "woohoo-psn-1000": {
       "baseline": true,
