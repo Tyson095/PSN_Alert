@@ -1,7 +1,4 @@
 {
-  "alert_quiet_until": {
-    "Rooter": "2026-11-24T17:31:48+05:30"
-  },
   "events": [
     {
       "at": "2026-11-23T17:46:00+05:30",
@@ -574,31 +571,31 @@
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-24T17:16:48+05:30",
+      "at": "2026-11-24T17:15:43+05:30",
       "message": "🟢 BACK IN STOCK\nRooter PSN ₹1000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹1,000.00",
       "product_id": "rooter-psn-1000",
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-24T17:16:48+05:30",
+      "at": "2026-11-24T17:15:43+05:30",
       "message": "🟢 BACK IN STOCK\nRooter PSN ₹2000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹2,000.00",
       "product_id": "rooter-psn-2000",
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-24T17:16:48+05:30",
+      "at": "2026-11-24T17:15:43+05:30",
       "message": "🟢 BACK IN STOCK\nRooter PSN ₹3000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹3,000.00",
       "product_id": "rooter-psn-3000",
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-24T17:16:48+05:30",
+      "at": "2026-11-24T17:15:43+05:30",
       "message": "🟢 BACK IN STOCK\nRooter PSN ₹4000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹4,000.00",
       "product_id": "rooter-psn-4000",
       "type": "RESTOCK"
     },
     {
-      "at": "2026-11-24T17:16:48+05:30",
+      "at": "2026-11-24T17:15:43+05:30",
       "message": "🟢 BACK IN STOCK\nRooter PSN ₹5000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹5,000.00",
       "product_id": "rooter-psn-5000",
       "type": "RESTOCK"
@@ -672,7 +669,7 @@
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
       "last_changed_at": "2026-11-19T22:49:34+05:30",
-      "last_error": "HTTPError: 403 Client Error: Forbidden for url: https://e2zstore.com/wp-json/wc/store/v1/products/rs-1000-playstation-network-wallet-top-up",
+      "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 1000.0,
@@ -684,7 +681,7 @@
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
       "last_changed_at": "2026-11-21T22:13:34+05:30",
-      "last_error": "HTTPError: 403 Client Error: Forbidden for url: https://e2zstore.com/wp-json/wc/store/v1/products/rs-2000-playstation-network-wallet-top-up",
+      "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 2000.0,
@@ -696,7 +693,7 @@
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
       "last_changed_at": "2026-11-17T18:31:15+05:30",
-      "last_error": "HTTPError: 403 Client Error: Forbidden for url: https://e2zstore.com/wp-json/wc/store/v1/products/rs-3000-playstation-network-wallet-top-up",
+      "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 3000.0,
@@ -708,7 +705,7 @@
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
       "last_changed_at": "2026-11-23T23:29:24+05:30",
-      "last_error": "HTTPError: 403 Client Error: Forbidden for url: https://e2zstore.com/wp-json/wc/store/v1/products/rs-4000-playstation-network-wallet-top-up",
+      "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 4000.0,
@@ -720,7 +717,7 @@
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
       "last_changed_at": "2026-11-23T22:34:05+05:30",
-      "last_error": "HTTPError: 403 Client Error: Forbidden for url: https://e2zstore.com/wp-json/wc/store/v1/products/rs-5000-playstation-store-gift-card-wallet-top-up",
+      "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 5000.0,
@@ -732,7 +729,7 @@
       "discount": "",
       "first_seen_at": "2026-11-10T17:18:21+05:30",
       "last_changed_at": "2026-11-10T17:18:21+05:30",
-      "last_error": "HTTPError: 403 Client Error: Forbidden for url: https://e2zstore.com/wp-json/wc/store/v1/products/rs-7000-sony-playstation-store-gift-card-wallet-top-up",
+      "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
       "price": 7000.0,
@@ -791,7 +788,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-24T17:16:48+05:30",
+      "last_changed_at": "2026-11-24T17:15:43+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
@@ -803,7 +800,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-24T17:16:48+05:30",
+      "last_changed_at": "2026-11-24T17:15:43+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
@@ -815,7 +812,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-24T17:16:48+05:30",
+      "last_changed_at": "2026-11-24T17:15:43+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
@@ -827,7 +824,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-24T17:16:48+05:30",
+      "last_changed_at": "2026-11-24T17:15:43+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
@@ -839,7 +836,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-08T21:14:55+05:30",
-      "last_changed_at": "2026-11-24T17:16:48+05:30",
+      "last_changed_at": "2026-11-24T17:15:43+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
