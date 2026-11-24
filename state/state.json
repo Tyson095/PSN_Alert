@@ -740,12 +740,12 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-22T14:29:29+05:30",
-      "last_changed_at": "2026-11-22T14:29:29+05:30",
+      "last_changed_at": "2026-11-24T12:31:15+05:30",
       "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
-      "note": "",
-      "price": 1000.0,
-      "status": "OUT_OF_STOCK"
+      "note": "GYFTR currently publishes no products for this brand",
+      "price": null,
+      "status": "UNKNOWN"
     },
     "gyftr-psn-2000": {
       "baseline": true,
@@ -755,7 +755,7 @@
       "last_changed_at": "2026-11-23T08:05:42+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
-      "note": "denomination 2000 not among GYFTR's published products",
+      "note": "GYFTR currently publishes no products for this brand",
       "price": null,
       "status": "UNKNOWN"
     },
@@ -767,7 +767,7 @@
       "last_changed_at": "2026-11-22T21:25:30+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
-      "note": "denomination 3000 not among GYFTR's published products",
+      "note": "GYFTR currently publishes no products for this brand",
       "price": null,
       "status": "UNKNOWN"
     },
@@ -779,7 +779,7 @@
       "last_changed_at": "2026-11-22T20:59:22+05:30",
       "last_error": "",
       "last_known_status": "OUT_OF_STOCK",
-      "note": "denomination 5000 not among GYFTR's published products",
+      "note": "GYFTR currently publishes no products for this brand",
       "price": null,
       "status": "UNKNOWN"
     },
