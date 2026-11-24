@@ -848,48 +848,48 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-24T15:02:49+05:30",
-      "last_error": "",
+      "last_changed_at": "2026-11-24T14:56:29+05:30",
+      "last_error": "HTTPError: 404 Client Error: Not Found for url: https://www.stanshop.co/playstation-psn-gift-card-in-india",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 1000.0,
-      "status": "OUT_OF_STOCK"
+      "price": null,
+      "status": "UNKNOWN"
     },
     "stan-psn-2000": {
       "baseline": true,
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-24T15:02:49+05:30",
-      "last_error": "",
+      "last_changed_at": "2026-11-24T14:56:29+05:30",
+      "last_error": "HTTPError: 404 Client Error: Not Found for url: https://www.stanshop.co/playstation-psn-gift-card-in-india",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 2000.0,
-      "status": "OUT_OF_STOCK"
+      "price": null,
+      "status": "UNKNOWN"
     },
     "stan-psn-3000": {
       "baseline": true,
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-24T15:02:49+05:30",
-      "last_error": "",
+      "last_changed_at": "2026-11-24T14:56:29+05:30",
+      "last_error": "HTTPError: 404 Client Error: Not Found for url: https://www.stanshop.co/playstation-psn-gift-card-in-india",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 3000.0,
-      "status": "OUT_OF_STOCK"
+      "price": null,
+      "status": "UNKNOWN"
     },
     "stan-psn-4000": {
       "baseline": true,
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-24T15:02:49+05:30",
-      "last_error": "",
+      "last_changed_at": "2026-11-24T14:56:29+05:30",
+      "last_error": "HTTPError: 404 Client Error: Not Found for url: https://www.stanshop.co/playstation-psn-gift-card-in-india",
       "last_known_status": "OUT_OF_STOCK",
       "note": "",
-      "price": 4000.0,
-      "status": "OUT_OF_STOCK"
+      "price": null,
+      "status": "UNKNOWN"
     },
     "woohoo-psn-1000": {
       "baseline": true,
