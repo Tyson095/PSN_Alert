@@ -1,8 +1,17 @@
 {
-  "alert_quiet_until": {
-    "Woohoo": "2026-11-26T09:48:51+05:30"
-  },
   "events": [
+    {
+      "at": "2026-11-25T11:27:22+05:30",
+      "message": "🟢 BACK IN STOCK\nRooter PSN ₹2000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹2,000.00",
+      "product_id": "rooter-psn-2000",
+      "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-25T11:27:22+05:30",
+      "message": "🟢 BACK IN STOCK\nRooter PSN ₹3000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹3,000.00",
+      "product_id": "rooter-psn-3000",
+      "type": "RESTOCK"
+    },
     {
       "at": "2026-11-25T11:27:22+05:30",
       "message": "🟢 BACK IN STOCK\nRooter PSN ₹4000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹4,000.00",
@@ -590,18 +599,6 @@
       "message": "🔻 PRICE DROP\nRooter PSN ₹5000\n₹5,000.00 → ₹4,925.00\nLink: https://shop.rooter.gg/product/playstation-gift-cards",
       "product_id": "rooter-psn-5000",
       "type": "PRICE_DROP"
-    },
-    {
-      "at": "2026-11-26T09:33:51+05:30",
-      "message": "🟢 BACK IN STOCK\nWoohoo PSN ₹1000\nLink: https://www.woohoo.in/playstation-e-gift-instant-voucher\nPrice: ₹1,000.00",
-      "product_id": "woohoo-psn-1000",
-      "type": "RESTOCK"
-    },
-    {
-      "at": "2026-11-26T09:33:51+05:30",
-      "message": "🟢 BACK IN STOCK\nWoohoo PSN ₹2000\nLink: https://www.woohoo.in/playstation-e-gift-instant-voucher\nPrice: ₹2,000.00",
-      "product_id": "woohoo-psn-2000",
-      "type": "RESTOCK"
     }
   ],
   "last_daily_report_date": "2026-11-26",
@@ -899,7 +896,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-12T12:22:19+05:30",
-      "last_changed_at": "2026-11-26T09:33:51+05:30",
+      "last_changed_at": "2026-11-20T10:09:19+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
@@ -911,7 +908,7 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-12T12:22:19+05:30",
-      "last_changed_at": "2026-11-26T09:33:51+05:30",
+      "last_changed_at": "2026-11-20T10:09:19+05:30",
       "last_error": "",
       "last_known_status": "IN_STOCK",
       "note": "",
