@@ -896,24 +896,24 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-12T12:22:19+05:30",
-      "last_changed_at": "2026-11-26T17:33:19+05:30",
+      "last_changed_at": "2026-11-26T10:45:52+05:30",
       "last_error": "",
-      "last_known_status": "OUT_OF_STOCK",
+      "last_known_status": "IN_STOCK",
       "note": "",
       "price": 1000.0,
-      "status": "OUT_OF_STOCK"
+      "status": "IN_STOCK"
     },
     "woohoo-psn-2000": {
       "baseline": true,
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-12T12:22:19+05:30",
-      "last_changed_at": "2026-11-26T17:33:19+05:30",
+      "last_changed_at": "2026-11-26T10:45:52+05:30",
       "last_error": "",
-      "last_known_status": "OUT_OF_STOCK",
+      "last_known_status": "IN_STOCK",
       "note": "",
       "price": 2000.0,
-      "status": "OUT_OF_STOCK"
+      "status": "IN_STOCK"
     },
     "woohoo-psn-3000": {
       "baseline": true,
