@@ -1,11 +1,8 @@
 {
+  "alert_quiet_until": {
+    "e2z Store": "2026-11-26T13:55:42+05:30"
+  },
   "events": [
-    {
-      "at": "2026-11-25T18:35:47+05:30",
-      "message": "🟢 BACK IN STOCK\nRooter PSN ₹2000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹2,000.00",
-      "product_id": "rooter-psn-2000",
-      "type": "RESTOCK"
-    },
     {
       "at": "2026-11-25T18:35:47+05:30",
       "message": "🟢 BACK IN STOCK\nRooter PSN ₹3000\nLink: https://shop.rooter.gg/product/playstation-gift-cards\nPrice: ₹3,000.00",
@@ -599,6 +596,12 @@
       "message": "🟢 BACK IN STOCK\ne2z Store PSN ₹5000\nLink: https://e2zstore.com/product/rs-5000-playstation-store-gift-card-wallet-top-up/\nPrice: ₹5,000.00",
       "product_id": "e2z-psn-5000",
       "type": "RESTOCK"
+    },
+    {
+      "at": "2026-11-26T13:40:42+05:30",
+      "message": "🟢 BACK IN STOCK\ne2z Store PSN ₹1000\nLink: https://e2zstore.com/product/rs-1000-playstation-network-wallet-top-up/\nPrice: ₹1,000.00",
+      "product_id": "e2z-psn-1000",
+      "type": "RESTOCK"
     }
   ],
   "last_daily_report_date": "2026-11-26",
@@ -668,12 +671,12 @@
       "cashback": "",
       "discount": "",
       "first_seen_at": "2026-11-09T22:21:55+05:30",
-      "last_changed_at": "2026-11-26T12:37:38+05:30",
+      "last_changed_at": "2026-11-26T13:40:42+05:30",
       "last_error": "",
-      "last_known_status": "OUT_OF_STOCK",
+      "last_known_status": "IN_STOCK",
       "note": "",
       "price": 1000.0,
-      "status": "OUT_OF_STOCK"
+      "status": "IN_STOCK"
     },
     "e2z-psn-2000": {
       "baseline": true,
